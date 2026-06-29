@@ -18,7 +18,7 @@ import os
 import sys
 import time
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # repo root
 from shared.generator import GenerationContext, LeadEnrichment, TemplateGenerator  # noqa: E402
@@ -33,6 +33,19 @@ GEN = TemplateGenerator()
 
 def conn():
     return connect(DB_PATH)
+
+
+@app.get("/")
+def home():
+    return send_from_directory(os.path.join(os.path.dirname(__file__), "static"), "index.html")
+
+
+@app.get("/api/sample-leads")
+def sample_leads():
+    import json
+    p = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples", "enriched_leads.json")
+    with open(p, encoding="utf-8") as f:
+        return jsonify(json.load(f))
 
 
 @app.post("/api/campaigns")
