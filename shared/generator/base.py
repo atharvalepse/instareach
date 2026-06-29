@@ -19,6 +19,7 @@ class GenerationContext:
 
     sender_name: str = ""
     tail: str = ""            # the campaign's actual ask, appended after the hook
+    tone: str = "casual"     # casual | professional | warm (see TemplateGenerator.TONES)
     max_chars: int = 280     # hard ceiling on the produced opener
 
 

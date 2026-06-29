@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from shared.generator import GenerationContext, LeadEnrichment, TemplateGenerator
+from shared.generator import TONES, GenerationContext, LeadEnrichment, TemplateGenerator
 from shared.generator.spintax import spin, variants
 
 
@@ -103,6 +103,25 @@ class TestGenerator(unittest.TestCase):
 
     def test_uses_first_name_when_present(self):
         self.assertIn("Priya", self.gen.generate(self._lead(top_hashtags="#a")).text)
+
+    def test_every_tone_stays_clean(self):
+        lead = self._lead(is_business="yes", category="Fitness Trainer", top_hashtags="#fit")
+        for tone in TONES:
+            for attempt in range(10):
+                msg = self.gen.generate(lead, GenerationContext(tone=tone), attempt=attempt)
+                self.assertNotRegex(msg.text, r"[{}%]")
+                self.assertTrue(msg.text[0].isupper())
+
+    def test_tone_changes_wording(self):
+        lead = self._lead(top_hashtags="#a")
+        casual = {self.gen.generate(lead, GenerationContext(tone="casual"), attempt=i).text for i in range(6)}
+        warm = {self.gen.generate(lead, GenerationContext(tone="warm"), attempt=i).text for i in range(6)}
+        self.assertTrue(casual.isdisjoint(warm))  # distinct voices
+
+    def test_unknown_tone_falls_back(self):
+        lead = self._lead(top_hashtags="#a")
+        # should not raise; falls back to default tone
+        self.gen.generate(lead, GenerationContext(tone="nonsense"))
 
     def test_tail_appended_and_length_capped(self):
         lead = self._lead(top_hashtags="#a")

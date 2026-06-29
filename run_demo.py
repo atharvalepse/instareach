@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from shared.generator import GenerationContext, LeadEnrichment, TemplateGenerator  # noqa: E402
+from shared.generator import TONES, GenerationContext, LeadEnrichment, TemplateGenerator  # noqa: E402
 
 SAMPLES = os.path.join(os.path.dirname(__file__), "samples", "enriched_leads.json")
 
@@ -23,13 +23,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tail", default="", help="campaign ask appended after the hook")
     ap.add_argument("--regen", type=int, default=1, help="variants to show per lead")
+    ap.add_argument("--tone", default="casual", choices=list(TONES), help="voice preset")
     args = ap.parse_args()
 
     rows = json.load(open(SAMPLES, encoding="utf-8"))
     gen = TemplateGenerator()
-    ctx = GenerationContext(tail=args.tail)
+    ctx = GenerationContext(tail=args.tail, tone=args.tone)
 
-    print(f"\nTemplateGenerator demo — {len(rows)} leads, {args.regen} variant(s) each\n" + "=" * 64)
+    print(f"\nTemplateGenerator demo — {len(rows)} leads, {args.regen} variant(s), tone={args.tone}\n" + "=" * 64)
     for row in rows:
         lead = LeadEnrichment.from_dict(row)
         flags = []

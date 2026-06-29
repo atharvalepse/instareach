@@ -1,0 +1,6 @@
+Flask>=3.0
+gunicorn>=21.0
+
+# Optional: only needed for ServerChannel (server-side instagrapi sending).
+# The rest of the backend runs without it.
+# instagrapi>=2.0

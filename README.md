@@ -23,39 +23,49 @@ analytics). Optimized for **reply-rate per unit of ban-risk**, not raw volume.
 
 ```
 ig-outreach-suite/
-├── shared/generator/      # ✅ BUILT: personalized-opener generators (zero-dep)
-│   ├── base.py            #   MessageGenerator interface + result types
+├── shared/generator/      # ✅ personalized-opener generators (zero-dep)
+│   ├── base.py            #   MessageGenerator interface + GenerationContext (tone, tail)
 │   ├── schema.py          #   LeadEnrichment — the extension⇄backend contract
-│   ├── template_generator.py
+│   ├── template_generator.py   #   3 voice presets (casual/professional/warm)
 │   └── spintax.py
-├── samples/               # sample enriched leads (as the extension emits)
-├── tests/                 # unittest suite (stdlib only)
-├── run_demo.py            # see real openers, no backend/browser/model needed
-├── extension/             # ▢ TODO: igscrapper, adapted (scrape + later send)
-└── backend/               # ▢ TODO: cleaned Flask brain (campaigns/scheduler)
+├── backend/               # ✅ Phase-0 brain
+│   ├── db.py              #   SQLite = single source of truth (campaigns/contacts/events)
+│   ├── models.py          #   contact state machine + cross-campaign suppression states
+│   ├── ingest.py          #   extension→backend handoff (dedup + suppression)
+│   ├── channels/          #   SendChannel: DryRunChannel + ServerChannel (instagrapi, lazy)
+│   ├── app.py             #   thin Flask API wiring it all together
+│   └── tests/
+├── samples/ · tests/ · run_demo.py
+└── extension/             # ▢ TODO: igscrapper, adapted (scrape + later BrowserChannel send)
 ```
 
-## Try the generator now
+## Try it now
 
 ```bash
-python3 run_demo.py
-python3 run_demo.py --regen 3 --tail "I run a creator collab program — would love to chat."
-python3 -m unittest discover -s tests
+# generator (no deps)
+python3 run_demo.py --tone professional --regen 3 --tail "Would love to chat."
+python3 -m unittest discover -s tests           # 16 tests
+
+# backend logic (no deps — DB, ingest, channels, end-to-end ingest→generate)
+python3 -m unittest discover -s backend/tests    # 12 tests
+
+# run the API (needs Flask)
+pip install -r backend/requirements.txt && python3 backend/app.py
 ```
 
 The generator **only references fields that were actually scraped** (no model =
 nothing to hallucinate), varies wording via spintax so sends aren't identical,
-and reports which fields grounded each message for the approve-before-send UI.
+picks a **voice preset** per campaign, and reports which fields grounded each
+message for the approve-before-send UI.
 
 ## Roadmap
 
-- **Phase 0** — plumbing: one DB as source of truth, `requirements.txt`, dashboard
-  auth, one-click extension→backend handoff, `SendChannel` interface + contact
-  state-machine schema.
-- **Phase 1** — ✅ personalization (`TemplateGenerator`) · ServerChannel send.
+- **Phase 0** — ✅ one DB as source of truth · `SendChannel` interface · contact
+  state-machine · one-click extension→backend ingest (dedup + suppression) · thin API.
+- **Phase 1** — ✅ personalization (`TemplateGenerator`, 3 tones). ▢ wire ServerChannel into a send loop.
 - **Phase 2** — true reply-aware follow-up scheduler (durable, survives restarts).
 - **Phase 3** — BrowserChannel (safe-mode sending) + adaptive account-health scoring.
-- **Phase 4** — lead scoring/suppression · AI reply inbox · analytics.
+- **Phase 4** — lead scoring · AI reply inbox · analytics · LLM generator tier (local/free).
 
-Phase 1's generator is built first because it's self-contained and the most
-motivating piece to see working.
+Still TODO from Phase 0: dashboard auth and migrating the old Flask campaign/
+variable logic onto this DB.

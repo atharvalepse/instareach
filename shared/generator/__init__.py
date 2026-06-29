@@ -2,7 +2,7 @@
 
 from .base import GeneratedMessage, GenerationContext, MessageGenerator
 from .schema import LeadEnrichment
-from .template_generator import TemplateGenerator
+from .template_generator import TONES, TemplateGenerator
 
 __all__ = [
     "MessageGenerator",
@@ -10,4 +10,5 @@ __all__ = [
     "GeneratedMessage",
     "LeadEnrichment",
     "TemplateGenerator",
+    "TONES",
 ]
