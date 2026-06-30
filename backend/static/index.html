@@ -10,7 +10,7 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);
        font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+  .wrap{max-width:880px;margin:0 auto;padding:28px 20px 60px}
   header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
   .logo{width:38px;height:38px;border-radius:9px;display:grid;place-items:center;
         background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;font-weight:800}
@@ -25,11 +25,13 @@
   label{display:block;font-size:12px;font-weight:600;color:#475569;margin:0 0 5px}
   input,select,textarea{width:100%;padding:9px 11px;font-size:14px;color:var(--fg);
        border:1px solid var(--line2);border-radius:8px;background:#fff;font-family:inherit}
-  textarea{min-height:130px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre}
+  textarea{min-height:96px;font:13px/1.5 inherit;white-space:pre-wrap}
+  textarea.mono{font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre;min-height:120px}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
        box-shadow:0 0 0 3px rgba(79,70,229,.15)}
   .row{display:grid;grid-template-columns:1fr 160px;gap:12px}
-  .row3{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  .row2{display:grid;grid-template-columns:1fr 200px;gap:12px;margin-top:12px}
+  .mt{margin-top:12px}
   .btn{margin-top:14px;padding:10px 16px;font-size:14px;font-weight:600;border:0;
        border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
   .btn:hover{background:var(--accent-d)} .btn:disabled{opacity:.5;cursor:not-allowed}
@@ -41,12 +43,22 @@
   .opener{border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-top:10px;background:#fcfcfd}
   .opener .top{display:flex;align-items:center;gap:8px;margin-bottom:5px}
   .u{font-weight:700;font-size:13px} .txt{color:#1e293b}
-  .badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
-         padding:2px 8px;border-radius:999px}
+  .badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:999px}
   .badge.g{background:#ecfdf5;color:#047857} .badge.x{background:#fef2f2;color:#b91c1c}
   .fields{font-size:11px;color:var(--muted);margin-top:4px}
   .hidden{display:none} .muted{color:var(--muted)} .ok{color:var(--ok);font-weight:600}
   .disclaimer{font-size:11px;color:#94a3b8;margin-top:8px}
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+     padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:7px 8px;border-bottom:1px solid var(--line)}
+  .st{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:capitalize}
+  .st-queued{background:#f1f5f9;color:#475569} .st-sent{background:#eef2ff;color:#4338ca}
+  .st-seen{background:#fef9c3;color:#854d0e} .st-replied{background:#ecfdf5;color:#047857}
+  .st-done{background:#e2e8f0;color:#334155} .st-failed{background:#fef2f2;color:#b91c1c}
+  .mini{padding:3px 8px;font-size:11px;font-weight:600;border:1px solid var(--line2);
+        border-radius:6px;background:#fff;cursor:pointer;margin-left:4px}
+  .mini:hover{background:var(--bg)}
 </style>
 </head>
 <body>
@@ -55,7 +67,7 @@
     <div class="logo">IG</div>
     <div><h1>IG Outreach Suite</h1></div>
   </header>
-  <p class="sub">Scrape → personalize → (later) send. Local · $0 AI · nothing is sent to Instagram here.</p>
+  <p class="sub">Scrape → personalize → sequence. Local · $0 AI · dry-run only — nothing is sent to Instagram here.</p>
 
   <!-- STEP 1 -->
   <div class="card">
@@ -67,60 +79,112 @@
           <option value="professional">Professional</option>
           <option value="warm" selected>Warm</option></select></div>
     </div>
-    <div style="margin-top:12px"><label>Your ask (appended after the personalized hook)</label>
-      <input id="tail" value="Would love to have you in our collab program." /></div>
+    <div class="row2">
+      <div><label>Message sequence (one per line — line 1 = opener ask, rest = follow-up nudges)</label>
+        <textarea id="seq">Would love to have you in our collab program.
+Just circling back on this — would love your thoughts!
+Last nudge — still keen to chat?</textarea></div>
+      <div><label>Days between follow-ups</label><input id="gap" type="number" value="2" min="1" max="30" /></div>
+    </div>
     <button class="btn" id="createBtn">Create campaign</button>
     <span id="cid" class="pill hidden" style="margin-left:10px"></span>
   </div>
 
   <!-- STEP 2 -->
-  <div class="card" id="card2">
-    <div class="step"><span class="num">2</span> Import scraped leads <span class="muted" style="text-transform:none;font-weight:500">(from the extension)</span></div>
+  <div class="card">
+    <div class="step"><span class="num">2</span> Import leads <span class="muted" style="text-transform:none;font-weight:500">(from the extension — JSON or CSV)</span></div>
     <label>Enriched leads (JSON array — the igscrapper full-enrichment shape)</label>
-    <textarea id="leads" spellcheck="false"></textarea>
-    <div class="bar" style="margin-top:12px">
-      <button class="btn sec" id="sampleBtn">Load sample leads</button>
-      <button class="btn" id="ingestBtn">Import to campaign</button>
-      <span id="ingestOut" class="muted"></span>
+    <textarea id="leads" class="mono" spellcheck="false"></textarea>
+    <div class="bar mt">
+      <button class="btn sec" id="sampleBtn">Load sample JSON</button>
+      <button class="btn" id="ingestBtn">Import JSON</button>
     </div>
+    <div class="bar mt" style="border-top:1px solid var(--line);padding-top:12px">
+      <input type="file" id="csvFile" accept=".csv" style="max-width:300px" />
+      <button class="btn" id="csvBtn">Upload CSV</button>
+      <button class="btn sec" id="csvSampleBtn">Download a sample CSV</button>
+    </div>
+    <span id="ingestOut" class="muted mt" style="display:block"></span>
   </div>
 
   <!-- STEP 3 -->
-  <div class="card" id="card3">
-    <div class="step"><span class="num">3</span> Generated openers <span class="muted" style="text-transform:none;font-weight:500">(grounded in real scraped data)</span></div>
+  <div class="card">
+    <div class="step"><span class="num">3</span> Preview message 1 <span class="muted" style="text-transform:none;font-weight:500">(grounded in real scraped data)</span></div>
     <button class="btn" id="previewBtn">Generate openers</button>
     <div id="openers"></div>
     <p class="disclaimer">Each opener references only fields that were actually scraped — no model, nothing fabricated. "Generic" = too little data to personalize honestly.</p>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="card">
+    <div class="step"><span class="num">4</span> Send loop &amp; follow-ups <span class="muted" style="text-transform:none;font-weight:500">(dry-run — nothing is sent to IG)</span></div>
+    <div class="bar">
+      <button class="btn" id="startBtn">Start campaign</button>
+      <button class="btn sec" id="tickBtn">Run tick</button>
+      <span class="muted">advance time</span>
+      <input id="adv" type="number" value="0" min="0" style="width:90px" /> <span class="muted">hours</span>
+      <button class="btn sec" id="refreshBtn">Refresh</button>
+    </div>
+    <span id="tickOut" class="muted mt" style="display:block"></span>
+    <div id="contacts"></div>
+    <p class="disclaimer">Tick = one pass of the scheduler. Set advance hours past a follow-up gap (e.g. 48) to fire the next message. Mark a contact <b>replied</b> and tick again — they get no further messages (reply = permanent stop). State lives in the DB, so it survives restarts.</p>
   </div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
 let CID = null;
-const api = (m,u,b) => fetch(u,{method:m,headers:{'Content-Type':'application/json'},
-                               body:b?JSON.stringify(b):undefined}).then(r=>r.json());
+const api = (m,u,b,raw) => fetch(u,{method:m,
+    headers: raw ? {'Content-Type':'text/csv'} : {'Content-Type':'application/json'},
+    body: b===undefined?undefined:(raw?b:JSON.stringify(b))}).then(r=>r.json());
+
+function buildSequence(){
+  const lines = $("seq").value.split("\n").map(s=>s.trim()).filter(Boolean);
+  const gap = parseFloat($("gap").value)||2;
+  return lines.map((body,i)=>({body, wait_hours: i===0?0:gap*24}));
+}
 
 $("createBtn").onclick = async () => {
   const r = await api("POST","/api/campaigns",
-    {name:$("name").value, tone:$("tone").value, tail:$("tail").value});
+    {name:$("name").value, tone:$("tone").value, sequence:buildSequence()});
   CID = r.campaign_id;
   const p = $("cid"); p.classList.remove("hidden"); p.innerHTML = "campaign: <b>"+CID+"</b>";
-  $("openers").innerHTML=""; $("ingestOut").textContent="";
+  $("openers").innerHTML=""; $("ingestOut").textContent=""; $("contacts").innerHTML=""; $("tickOut").textContent="";
 };
 
 $("sampleBtn").onclick = async () => {
-  const leads = await api("GET","/api/sample-leads");
-  $("leads").value = JSON.stringify(leads, null, 2);
+  $("leads").value = JSON.stringify(await api("GET","/api/sample-leads"), null, 2);
 };
 
 $("ingestBtn").onclick = async () => {
   if(!CID) return alert("Create a campaign first (step 1).");
   let leads; try{ leads = JSON.parse($("leads").value); }catch(e){ return alert("Leads must be valid JSON."); }
-  const s = await api("POST",`/api/campaigns/${CID}/leads`, leads);
+  showIngest(await api("POST",`/api/campaigns/${CID}/leads`, leads));
+};
+
+$("csvBtn").onclick = async () => {
+  if(!CID) return alert("Create a campaign first (step 1).");
+  const f = $("csvFile").files[0];
+  if(!f) return alert("Choose a .csv file first.");
+  const text = await f.text();
+  showIngest(await api("POST",`/api/campaigns/${CID}/leads/csv`, text, true));
+};
+
+$("csvSampleBtn").onclick = () => {
+  const csv = "instagram,full_name,is_business,category,top_hashtags,inferred_activity\n"+
+    "https://instagram.com/fitwithpriya,Priya Sharma,yes,Fitness Trainer,#fitness #homeworkout,video-first (reels/short-form)\n"+
+    "@thelofibeats,Arjun Producer,yes,Musician/Band,#lofi #beats,carousel-heavy (educational/portfolio)\n"+
+    "wanderlens,Maya,no,,#travelphotography #35mm,photo/lifestyle\n";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download = "sample_leads.csv"; a.click();
+};
+
+function showIngest(s){
   $("ingestOut").innerHTML = `<span class="ok">✓ imported ${s.inserted}</span> · `+
     `${s.duplicates} duplicate · ${s.suppressed} suppressed`+
-    (s.errors.length?` · ${s.errors.length} errors`:"");
-};
+    (s.errors&&s.errors.length?` · <span style="color:#b91c1c">${s.errors.length} errors</span>`:"");
+}
 
 $("previewBtn").onclick = async () => {
   if(!CID) return alert("Create a campaign and import leads first.");
@@ -130,13 +194,48 @@ $("previewBtn").onclick = async () => {
     <div class="opener">
       <div class="top"><span class="u">@${o.username}</span>
         <span class="badge ${o.grounded?'g':'x'}">${o.grounded?'grounded':'generic'}</span></div>
-      <div class="txt">${o.message.replace(/</g,'&lt;')}</div>
+      <div class="txt">${esc(o.message)}</div>
       <div class="fields">${o.used_fields.length?'from: '+o.used_fields.join(', '):'no personalization signals'}</div>
     </div>`).join("");
 };
 
-// prefill the leads box on load
-$("sampleBtn").click();
+$("startBtn").onclick = async () => {
+  if(!CID) return alert("Create a campaign first.");
+  await api("POST",`/api/campaigns/${CID}/start`);
+  $("tickOut").innerHTML = '<span class="ok">campaign is running</span>'; refreshContacts();
+};
+
+$("tickBtn").onclick = async () => {
+  if(!CID) return alert("Create + start a campaign first.");
+  const s = await api("POST",`/api/campaigns/${CID}/tick`, {advance_hours: parseFloat($("adv").value)||0});
+  $("tickOut").innerHTML = `tick → sent ${s.sent} · completed ${s.completed} · `+
+    `skipped ${s.skipped} · failed ${s.failed} · blocked ${s.blocked}`;
+  refreshContacts();
+};
+$("refreshBtn").onclick = () => refreshContacts();
+
+async function refreshContacts(){
+  if(!CID) return;
+  const rows = await api("GET",`/api/campaigns/${CID}/contacts`);
+  if(!rows.length){ $("contacts").innerHTML='<p class="muted mt">No contacts yet.</p>'; return; }
+  $("contacts").innerHTML = `<table><thead><tr>
+      <th>Username</th><th>State</th><th>Msg #</th><th>Next action</th><th></th></tr></thead><tbody>`+
+    rows.map(r=>`<tr>
+      <td>@${r.username}</td>
+      <td><span class="st st-${r.state}">${r.state}</span></td>
+      <td>${r.message_number}</td>
+      <td class="muted">${r.next_action_at?fmt(r.next_action_at):'—'}</td>
+      <td style="text-align:right">
+        <button class="mini" onclick="ev('${r.username}','seen')">mark seen</button>
+        <button class="mini" onclick="ev('${r.username}','replied')">mark replied</button>
+      </td></tr>`).join("")+`</tbody></table>`;
+}
+
+window.ev = async (u,t) => { await api("POST",`/api/campaigns/${CID}/contacts/${u}/event`,{type:t}); refreshContacts(); };
+const esc = s => s.replace(/</g,'&lt;');
+const fmt = s => { try{ return new Date(s+'Z').toLocaleString(); }catch(e){ return s; } };
+
+$("sampleBtn").click();  // prefill leads box
 </script>
 </body>
 </html>

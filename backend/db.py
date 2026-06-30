@@ -12,12 +12,13 @@ import sqlite3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS campaigns (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    tone        TEXT DEFAULT 'casual',
-    tail        TEXT DEFAULT '',
-    status      TEXT DEFAULT 'draft',          -- draft|running|paused|done
-    created_at  TEXT DEFAULT (datetime('now'))
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    tone          TEXT DEFAULT 'casual',
+    tail          TEXT DEFAULT '',
+    sequence_json TEXT DEFAULT '[]',            -- [{body, wait_hours}, ...] (step 0 = opener)
+    status        TEXT DEFAULT 'draft',         -- draft|running|paused|done
+    created_at    TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS contacts (
@@ -54,7 +55,16 @@ def connect(path: str = "backend/outreach.db") -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn):
+    """Idempotent migrations for DB files created by an older schema."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(campaigns)")}
+    if "sequence_json" not in cols:
+        conn.execute("ALTER TABLE campaigns ADD COLUMN sequence_json TEXT DEFAULT '[]'")
+    conn.commit()
 
 
 def log_event(conn, contact_id, username, type_, detail=""):
