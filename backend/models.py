@@ -7,6 +7,7 @@ send loop and follow-up scheduler (Phase 1–2) advance the rest.
 
 # --- contact states ----------------------------------------------------------
 QUEUED = "queued"            # ingested, ready for message 1
+PENDING_SEND = "pending_send"  # handed to the outbox, awaiting the extension to deliver
 SENT = "sent"               # a message went out, awaiting read/reply
 SEEN = "seen"               # recipient opened it, no reply yet
 REPLIED = "replied"         # recipient replied -> STOP following up
@@ -17,11 +18,11 @@ OPTED_OUT = "opted_out"     # asked not to be contacted -> permanent suppress
 SUPPRESSED = "suppressed"   # skipped at ingest (already contacted elsewhere)
 
 STATES = {
-    QUEUED, SENT, SEEN, REPLIED, FOLLOW_UP_DUE, DONE, FAILED, OPTED_OUT, SUPPRESSED,
+    QUEUED, PENDING_SEND, SENT, SEEN, REPLIED, FOLLOW_UP_DUE, DONE, FAILED, OPTED_OUT, SUPPRESSED,
 }
 
 # States that count as "already engaged" for cross-campaign suppression.
-ENGAGED_STATES = {SENT, SEEN, REPLIED, FOLLOW_UP_DUE, DONE}
+ENGAGED_STATES = {PENDING_SEND, SENT, SEEN, REPLIED, FOLLOW_UP_DUE, DONE}
 
 
 def row_to_dict(row):

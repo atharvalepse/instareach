@@ -116,6 +116,124 @@ def run_due(conn, channel, gen=None, now=None, max_sends=100) -> dict:
     return s
 
 
+# --- browser channel: enqueue for the extension, apply its result ------------
+# Browser sending is asynchronous: the backend can't call the browser, so it
+# writes the composed message to the outbox (contact -> pending_send) and the
+# extension pulls it. The follow-up state transition is deferred until the
+# extension confirms delivery via apply_send_result().
+_DUE_SELECT = (
+    """SELECT c.id, c.username, c.state, c.message_number, c.next_action_at,
+              c.enrichment_json, ca.id AS cid, ca.sequence_json, ca.tone
+       FROM contacts c JOIN campaigns ca ON ca.id = c.campaign_id
+       WHERE ca.status = 'running' AND c.state IN ('queued','sent','seen')
+       ORDER BY c.id"""
+)
+
+
+def _due_step(row, now):
+    """Return the step_index to send for this contact, or None if not due."""
+    seq = json.loads(row["sequence_json"] or "[]")
+    if not seq:
+        return None, seq
+    if row["state"] == "queued":
+        return 0, seq
+    if row["message_number"] >= len(seq):
+        return "exhausted", seq
+    nxt = row["next_action_at"]
+    if not nxt or datetime.fromisoformat(nxt) > now:
+        return None, seq
+    return row["message_number"], seq
+
+
+def enqueue_due(conn, gen=None, now=None, max_enqueue=100) -> dict:
+    """Compose every due message and drop it in the outbox for the extension."""
+    gen = gen or TemplateGenerator()
+    now = now or datetime.utcnow()
+    queued = 0
+    for r in conn.execute(_DUE_SELECT).fetchall():
+        if queued >= max_enqueue:
+            break
+        step_index, seq = _due_step(r, now)
+        if step_index is None:
+            continue
+        if step_index == "exhausted":
+            conn.execute("UPDATE contacts SET state='done', updated_at=? WHERE id=?",
+                         (now.isoformat(), r["id"]))
+            continue
+        lead = LeadEnrichment.from_dict(json.loads(r["enrichment_json"] or "{}"))
+        ctx = GenerationContext(tone=r["tone"] or "casual")
+        text = compose_message(gen, lead, ctx, step_index, seq[step_index].get("body", ""))
+        conn.execute(
+            """INSERT INTO outbox (campaign_id, contact_id, username, text, step_index, status)
+               VALUES (?,?,?,?,?, 'pending')""",
+            (r["cid"], r["id"], r["username"], text, step_index),
+        )
+        conn.execute("UPDATE contacts SET state=?, updated_at=? WHERE id=?",
+                     (models.PENDING_SEND, now.isoformat(), r["id"]))
+        log_event(conn, r["id"], r["username"], "queued_send", f"step {step_index + 1}/{len(seq)}")
+        queued += 1
+    conn.commit()
+    return {"queued": queued}
+
+
+def next_pending(conn, limit=10):
+    """What the extension polls: the oldest pending outbox items."""
+    rows = conn.execute(
+        "SELECT id, username, text FROM outbox WHERE status='pending' ORDER BY id LIMIT ?", (limit,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def apply_send_result(conn, outbox_id, status, now=None) -> bool:
+    """Extension reports back: status = ok|sent | failed | blocked."""
+    now = now or datetime.utcnow()
+    o = conn.execute("SELECT * FROM outbox WHERE id=?", (outbox_id,)).fetchone()
+    if not o or o["status"] != "pending":
+        return False
+    contact = conn.execute("SELECT * FROM contacts WHERE id=?", (o["contact_id"],)).fetchone()
+    if not contact:
+        return False
+    camp = conn.execute("SELECT sequence_json FROM campaigns WHERE id=?", (o["campaign_id"],)).fetchone()
+    seq = json.loads((camp["sequence_json"] if camp else "[]") or "[]")
+    step_index = o["step_index"]
+
+    if status in ("ok", "sent", "done"):
+        # If they replied while it was in flight, respect the stop — don't revive.
+        if contact["state"] == models.REPLIED:
+            conn.execute("UPDATE outbox SET status='done', updated_at=? WHERE id=?", (now.isoformat(), o["id"]))
+            conn.commit()
+            return True
+        new_num = step_index + 1
+        if new_num < len(seq):
+            next_at = (now + timedelta(hours=float(seq[new_num].get("wait_hours", 48)))).isoformat()
+            state = models.SENT
+        else:
+            next_at, state = None, models.DONE
+        conn.execute(
+            """UPDATE contacts SET state=?, message_number=?, last_message=?,
+               next_action_at=?, updated_at=? WHERE id=?""",
+            (state, new_num, o["text"], next_at, now.isoformat(), contact["id"]),
+        )
+        conn.execute("UPDATE outbox SET status='done', updated_at=? WHERE id=?", (now.isoformat(), o["id"]))
+        log_event(conn, contact["id"], o["username"], "sent", f"step {new_num}/{len(seq)} (browser)")
+    elif status == "blocked":
+        # revert so it retries when the campaign is resumed; pause the campaign
+        revert = models.QUEUED if step_index == 0 else models.SENT
+        next_at = None if step_index == 0 else now.isoformat()
+        conn.execute("UPDATE contacts SET state=?, next_action_at=?, updated_at=? WHERE id=?",
+                     (revert, next_at, now.isoformat(), contact["id"]))
+        conn.execute("UPDATE campaigns SET status='paused' WHERE id=?", (o["campaign_id"],))
+        conn.execute("UPDATE outbox SET status='failed', updated_at=? WHERE id=?", (now.isoformat(), o["id"]))
+        log_event(conn, contact["id"], o["username"], "failed", "blocked (browser) — campaign paused")
+    else:  # failed
+        conn.execute("UPDATE contacts SET state='failed', updated_at=? WHERE id=?",
+                     (now.isoformat(), contact["id"]))
+        conn.execute("UPDATE outbox SET status='failed', updated_at=? WHERE id=?", (now.isoformat(), o["id"]))
+        log_event(conn, contact["id"], o["username"], "failed", "send failed (browser)")
+    conn.commit()
+    return True
+
+
 # --- reply / read signals (fed in via API/UI today; auto-poller later) -------
 def mark_event(conn, campaign_id, username, type_) -> bool:
     """type_ = 'replied' (permanent stop) | 'seen' (still eligible for follow-up)."""

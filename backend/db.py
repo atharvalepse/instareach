@@ -44,8 +44,24 @@ CREATE TABLE IF NOT EXISTS events (
     created_at  TEXT DEFAULT (datetime('now'))
 );
 
+-- Outbox: the queue between the brain (scheduler) and the hands (extension).
+-- The scheduler enqueues a composed message; the browser extension pulls it,
+-- delivers it from the real IG session, and reports the result back.
+CREATE TABLE IF NOT EXISTS outbox (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id  TEXT NOT NULL,
+    contact_id   INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    username     TEXT NOT NULL,
+    text         TEXT NOT NULL,
+    step_index   INTEGER NOT NULL,          -- which sequence step this delivers
+    status       TEXT DEFAULT 'pending',    -- pending | done | failed
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_contacts_username ON contacts(username);
 CREATE INDEX IF NOT EXISTS idx_contacts_campaign ON contacts(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status);
 """
 
 

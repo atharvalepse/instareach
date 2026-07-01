@@ -111,6 +111,32 @@ def contact_event(cid, username):
     return (jsonify(ok=True) if ok else (jsonify(error="contact not found or bad type"), 400))
 
 
+# --- agent API: the contract the browser extension talks to ------------------
+@app.post("/api/agent/enqueue")
+def agent_enqueue():
+    """Compose all due messages across running campaigns into the outbox.
+    Optional advance_hours fast-forwards time so follow-ups can be demoed."""
+    from datetime import datetime, timedelta
+    body = request.get_json(silent=True) or {}
+    now = datetime.utcnow() + timedelta(hours=float(body.get("advance_hours", 0)))
+    return jsonify(scheduler.enqueue_due(conn(), GEN, now=now))
+
+
+@app.get("/api/agent/next")
+def agent_next():
+    """The extension polls this for the next messages to deliver."""
+    limit = int(request.args.get("limit", 10))
+    return jsonify(scheduler.next_pending(conn(), limit))
+
+
+@app.post("/api/agent/result")
+def agent_result():
+    """The extension reports delivery: {id, status: ok|failed|blocked}."""
+    d = request.get_json(force=True) or {}
+    ok = scheduler.apply_send_result(conn(), d.get("id"), d.get("status", ""))
+    return (jsonify(ok=True) if ok else (jsonify(error="unknown or already-handled item"), 400))
+
+
 @app.get("/api/campaigns")
 def list_campaigns():
     rows = conn().execute("SELECT * FROM campaigns ORDER BY created_at DESC").fetchall()
