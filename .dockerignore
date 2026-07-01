@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.db
+.git/
+.env
+session*.json
+google_credentials.json
+tests/
+backend/tests/

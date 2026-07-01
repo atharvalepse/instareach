@@ -148,9 +148,70 @@ async function startAgent() {
 
 function stopAgent() { AGENT_RUNNING = false; }
 
+// ===========================================================================
+// AUTO REPLY-POLLER — watches the IG inbox and tells the backend who replied,
+// so follow-ups auto-stop with no manual marking. Reading the inbox is the
+// other VOLATILE layer (endpoint/shape changes periodically — fix HERE).
+// ===========================================================================
+let WATCH_RUNNING = false;
+
+async function readInbox() {
+  const res = await fetch("https://www.instagram.com/api/v1/direct_v2/inbox/?persistentBadging=true&limit=20", {
+    credentials: "include",
+    headers: { "x-ig-app-id": AGENT.APP_ID, "x-requested-with": "XMLHttpRequest", accept: "application/json" },
+  });
+  const json = await res.json();
+  return (json?.inbox?.threads) || [];
+}
+
+async function replyWatchOnce() {
+  let watch;
+  try {
+    watch = new Set(await (await fetch(`${AGENT.BACKEND}/api/agent/watchlist`)).json());
+  } catch { return { error: "backend unreachable" }; }
+  if (!watch.size) return { watched: 0 };
+
+  const me = (await chrome.cookies.get({ url: "https://www.instagram.com", name: "ds_user_id" }))?.value;
+  let threads = [];
+  try { threads = await readInbox(); } catch { return { error: "inbox read failed" }; }
+
+  let found = 0;
+  for (const t of threads) {
+    const other = (t.users || []).find((u) => String(u.pk) !== String(me));
+    if (!other || !watch.has(other.username)) continue;
+    const last = (t.items || [])[0];               // newest message first
+    if (last && String(last.user_id) !== String(me)) {   // last message is inbound = they replied
+      await fetch(`${AGENT.BACKEND}/api/agent/reply`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: other.username }),
+      }).catch(() => {});
+      found++;
+    }
+  }
+  return { watched: watch.size, replies: found };
+}
+
+async function startReplyWatch(intervalMs = 120000) {
+  if (WATCH_RUNNING) return;
+  WATCH_RUNNING = true;
+  while (WATCH_RUNNING) {
+    if (await _loggedIn()) await replyWatchOnce();
+    await _sleep(intervalMs);
+  }
+}
+function stopReplyWatch() { WATCH_RUNNING = false; }
+
+// One call to fully automate: deliver queued DMs AND auto-detect replies.
+function startAll() { startAgent(); startReplyWatch(); }
+function stopAll() { stopAgent(); stopReplyWatch(); }
+
 // Expose for wiring into the popup / background message router.
 if (typeof self !== "undefined") {
   self.startAgent = startAgent;
   self.stopAgent = stopAgent;
   self.pollOnce = pollOnce;   // handy for a single manual "send now" trigger
+  self.startReplyWatch = startReplyWatch;
+  self.stopReplyWatch = stopReplyWatch;
+  self.startAll = startAll;   // ← the "max automation" entry point
+  self.stopAll = stopAll;
 }

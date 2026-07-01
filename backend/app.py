@@ -16,6 +16,7 @@ Endpoints:
 
 import os
 import sys
+import threading
 import time
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -135,6 +136,51 @@ def agent_result():
     d = request.get_json(force=True) or {}
     ok = scheduler.apply_send_result(conn(), d.get("id"), d.get("status", ""))
     return (jsonify(ok=True) if ok else (jsonify(error="unknown or already-handled item"), 400))
+
+
+@app.get("/api/agent/watchlist")
+def agent_watchlist():
+    """Usernames the extension's reply-poller should watch the IG inbox for."""
+    return jsonify(scheduler.watchlist(conn()))
+
+
+@app.post("/api/agent/reply")
+def agent_reply():
+    """The reply-poller reports an inbound reply → stop this user's follow-ups."""
+    d = request.get_json(force=True) or {}
+    u = (d.get("username") or "").lstrip("@").strip()
+    n = scheduler.mark_replied_global(conn(), u) if u else 0
+    return jsonify(stopped=n)
+
+
+# --- auto-scheduler: makes follow-ups fire on their own (no manual ticking) ---
+_auto_started = False
+
+
+def _start_auto_scheduler():
+    """Background thread that enqueues due messages on an interval. Run the web
+    process with a SINGLE worker (gunicorn --workers 1) so exactly one runs."""
+    global _auto_started
+    if _auto_started or os.environ.get("AUTO_TICK", "1") != "1":
+        return
+    _auto_started = True
+    interval = int(os.environ.get("AUTO_TICK_SECONDS", 300))
+
+    def loop():
+        while True:
+            time.sleep(interval)
+            try:
+                r = scheduler.enqueue_due(conn(), GEN)
+                if r["queued"]:
+                    print(f"[auto-tick] enqueued {r['queued']}", flush=True)
+            except Exception as e:
+                print(f"[auto-tick] error: {e}", flush=True)
+
+    threading.Thread(target=loop, daemon=True, name="auto-scheduler").start()
+    print(f"[auto-tick] on — enqueuing due messages every {interval}s", flush=True)
+
+
+_start_auto_scheduler()
 
 
 @app.get("/api/campaigns")

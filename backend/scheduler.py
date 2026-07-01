@@ -235,6 +235,32 @@ def apply_send_result(conn, outbox_id, status, now=None) -> bool:
 
 
 # --- reply / read signals (fed in via API/UI today; auto-poller later) -------
+def watchlist(conn):
+    """Usernames we're awaiting a reply from (sent/seen) in running campaigns —
+    what the extension's reply-poller watches the IG inbox for."""
+    rows = conn.execute(
+        """SELECT DISTINCT c.username FROM contacts c JOIN campaigns ca ON ca.id = c.campaign_id
+           WHERE ca.status='running' AND c.state IN ('sent','seen','pending_send')"""
+    ).fetchall()
+    return [r["username"] for r in rows]
+
+
+def mark_replied_global(conn, username) -> int:
+    """A reply came in on IG — stop follow-ups for this user across all running
+    campaigns. Called by the auto reply-poller."""
+    rows = conn.execute(
+        """SELECT c.id FROM contacts c JOIN campaigns ca ON ca.id = c.campaign_id
+           WHERE c.username=? AND ca.status='running'
+             AND c.state IN ('sent','seen','pending_send')""",
+        (username,),
+    ).fetchall()
+    for r in rows:
+        conn.execute("UPDATE contacts SET state='replied', updated_at=datetime('now') WHERE id=?", (r["id"],))
+        log_event(conn, r["id"], username, "replied", "auto-detected from IG inbox")
+    conn.commit()
+    return len(rows)
+
+
 def mark_event(conn, campaign_id, username, type_) -> bool:
     """type_ = 'replied' (permanent stop) | 'seen' (still eligible for follow-up)."""
     row = conn.execute(
@@ -256,19 +282,31 @@ def mark_event(conn, campaign_id, username, type_) -> bool:
 
 
 # --- standalone durable runner ----------------------------------------------
-def run_forever(db_path, interval=60, channel=None):
-    """Tick forever; state is in the DB so restarts resume cleanly."""
+def run_forever(db_path, interval=300, mode="enqueue"):
+    """Tick forever; state is in the DB so restarts resume cleanly.
+
+    mode='enqueue' (default, browser channel): queue due messages for the
+      extension to deliver. mode='dryrun': deliver via DryRunChannel (testing).
+    """
     import time
-    from channels import DryRunChannel
-    channel = channel or DryRunChannel()
     gen = TemplateGenerator()
     while True:
-        s = run_due(connect(db_path), channel, gen)
-        if s["sent"] or s["blocked"] or s["failed"]:
-            print(f"[scheduler] {s}")
+        try:
+            if mode == "dryrun":
+                from channels import DryRunChannel
+                s = run_due(connect(db_path), DryRunChannel(), gen)
+                if s["sent"] or s["blocked"] or s["failed"]:
+                    print(f"[scheduler] {s}")
+            else:
+                r = enqueue_due(connect(db_path), gen)
+                if r["queued"]:
+                    print(f"[scheduler] enqueued {r['queued']}")
+        except Exception as e:
+            print(f"[scheduler] error: {e}")
         time.sleep(interval)
 
 
 if __name__ == "__main__":
     path = os.environ.get("OUTREACH_DB", os.path.join(os.path.dirname(__file__), "outreach.db"))
-    run_forever(path, interval=int(os.environ.get("TICK_INTERVAL", 60)))
+    run_forever(path, interval=int(os.environ.get("AUTO_TICK_SECONDS", 300)),
+                mode=os.environ.get("SCHEDULER_MODE", "enqueue"))

@@ -112,5 +112,33 @@ class TestOutbox(unittest.TestCase):
         self.assertFalse(scheduler.apply_send_result(c, oid, "ok", now=T0))  # already handled
 
 
+class TestReplyPoller(unittest.TestCase):
+    def test_watchlist_only_awaiting_reply_in_running(self):
+        c = setup(leads=(LEAD, {"username": "maya"}))
+        scheduler.enqueue_due(c, now=T0)
+        scheduler.apply_send_result(c, scheduler.next_pending(c)[0]["id"], "ok", now=T0)  # priya -> sent
+        wl = scheduler.watchlist(c)
+        self.assertIn("priya", wl)                 # sent -> awaiting reply
+        self.assertIn("maya", wl)                  # pending_send -> also awaiting
+        # a done/paused campaign should not appear
+        c.execute("UPDATE campaigns SET status='paused' WHERE id='c1'")
+        c.commit()
+        self.assertEqual(scheduler.watchlist(c), [])
+
+    def test_mark_replied_global_stops_followups(self):
+        c = setup()
+        scheduler.enqueue_due(c, now=T0)
+        scheduler.apply_send_result(c, scheduler.next_pending(c)[0]["id"], "ok", now=T0)
+        n = scheduler.mark_replied_global(c, "priya")
+        self.assertEqual(n, 1)
+        self.assertEqual(contact(c)["state"], "replied")
+        # and no follow-up is ever enqueued again
+        self.assertEqual(scheduler.enqueue_due(c, now=T0 + timedelta(hours=200))["queued"], 0)
+
+    def test_mark_replied_global_noop_for_unknown(self):
+        c = setup()
+        self.assertEqual(scheduler.mark_replied_global(c, "ghost"), 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
