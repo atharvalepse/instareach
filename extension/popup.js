@@ -11,11 +11,16 @@ async function refresh() {
   $("failed").textContent = s.stats?.failed ?? 0;
   $("remaining").textContent = s.quota ? s.quota.remaining : "–";
 
-  // connection line
+  // connection line — distinguish unreachable vs up-but-DB-broken
   const conn = $("conn");
   if (!s.backend) { conn.textContent = "no backend URL set"; conn.className = "conn"; }
-  else if (s.quota) { conn.textContent = `connected · ${s.quota.sent_last_day}/${s.quota.daily_cap} sent today`; conn.className = "conn ok"; }
-  else { conn.textContent = "backend unreachable (is it running?)"; conn.className = "conn bad"; }
+  else if (s.health && s.health.ok && s.quota) {
+    conn.textContent = `connected · ${s.quota.sent_last_day}/${s.quota.daily_cap} sent today`; conn.className = "conn ok";
+  } else if (s.health && !s.health.ok) {
+    conn.textContent = `backend up, DB error: ${s.health.error || "unknown"}`; conn.className = "conn bad";
+  } else {
+    conn.textContent = "backend unreachable (check the URL / that it's deployed)"; conn.className = "conn bad";
+  }
 
   $("start").disabled = s.running;
   $("stop").disabled = !s.running;

@@ -189,9 +189,17 @@ chrome.runtime.onMessage.addListener((m, _s, reply) => {
       reply({ ok: true });
     } else if (m.type === "STATUS") {
       const s = await state();
-      let quota = null;
-      if (s.backend) { try { quota = await apiGet(s.backend, "/api/agent/quota"); } catch { /* offline */ } }
-      reply({ ...s, loggedIn: await loggedIn(), quota });
+      let health = null, quota = null;
+      if (s.backend) {
+        try {
+          const r = await fetch(s.backend + "/api/health");
+          health = await r.json();                 // {ok, db, error?} even on 500
+        } catch { health = null; }                 // truly unreachable (bad URL / offline)
+        if (health && health.ok) {
+          try { quota = await apiGet(s.backend, "/api/agent/quota"); } catch { /* ignore */ }
+        }
+      }
+      reply({ ...s, loggedIn: await loggedIn(), health, quota });
     }
   })();
   return true;   // async response

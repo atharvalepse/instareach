@@ -55,6 +55,21 @@ def home():
     return send_from_directory(os.path.join(os.path.dirname(__file__), "static"), "index.html")
 
 
+@app.get("/api/health")
+def health():
+    """Reports whether the database is actually reachable — hit this to see the
+    exact DB error (e.g. missing/invalid DATABASE_URL) instead of a blank 500."""
+    if not os.environ.get("DATABASE_URL"):
+        return jsonify(ok=False, db="error", error="DATABASE_URL is not set"), 500
+    try:
+        conn().execute("SELECT 1").fetchone()
+        return jsonify(ok=True, db="connected")
+    except Exception as e:
+        # trim + strip anything password-ish before returning
+        msg = str(e).splitlines()[0][:300]
+        return jsonify(ok=False, db="error", error=msg), 500
+
+
 @app.get("/api/sample-leads")
 def sample_leads():
     import json
