@@ -125,7 +125,10 @@ class Conn:
 
 
 def connect(dsn=None) -> Conn:
-    raw = psycopg.connect(dsn or DATABASE_URL, row_factory=_hybrid_row)
+    # prepare_threshold=None disables server-side prepared statements, which is
+    # REQUIRED for Supabase's transaction-mode pooler (pgbouncer) — otherwise you
+    # get "prepared statement already exists" errors. Harmless on direct Postgres.
+    raw = psycopg.connect(dsn or DATABASE_URL, row_factory=_hybrid_row, prepare_threshold=None)
     _init(raw)
     return Conn(raw)
 
