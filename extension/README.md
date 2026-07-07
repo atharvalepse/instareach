@@ -1,41 +1,43 @@
-# Extension (hands)
+# IG Outreach Sender (Chrome extension)
 
-The browser extension is the **execution layer** — it acts inside your real,
-logged-in instagram.com session (real IP, cookies, device fingerprint), so
-Instagram sees ordinary activity, not a server logging in.
+The **hands**: a loadable MV3 Chrome extension that delivers the DMs your backend
+queues, sending each from **your own logged-in instagram.com session** (real IP,
+cookies, device fingerprint — no password on any server). It also watches your
+inbox and auto-tells the backend who replied, so follow-ups stop.
 
-## `browser_channel.js` — the send agent (BrowserChannel)
+## Install (Load unpacked)
+1. Open **chrome://extensions**, turn on **Developer mode** (top-right).
+2. **Load unpacked** → select this `extension/` folder.
+3. Stay **logged into instagram.com** in this browser — use a **burner** account.
+4. Click the extension icon → paste your **Railway backend URL**
+   (e.g. `https://web-production-xxxx.up.railway.app`) → **Save**.
+5. Click **Start sending**. That's it — no console commands.
 
-Polls the backend outbox, resolves each `@username` → user id, sends the DM from
-your session, and reports the result. This is the safe delivery path (no
-password on a server, no datacenter IP).
+## What it does
+- Every ~30s it asks the backend for the next queued DM (`/api/agent/next`),
+  sends it, and reports the result (`/api/agent/result`) so the backend advances
+  the sequence.
+- **Throttle:** 60–180s between DMs (randomized). Combined with the backend's
+  hourly/daily caps, volume stays ban-safe.
+- **Stop-on-block:** a 429 / checkpoint / feedback_required halts everything and
+  logs it — walk away from that account for a day+.
+- **Reply detection:** every ~2 min it checks your inbox and posts replies to
+  `/api/agent/reply`, so people who answered get no more follow-ups.
+- Driven by `chrome.alarms`, so it keeps working after the service worker sleeps.
 
-Flow:
-```
-backend scheduler → outbox (pending)
-   GET  /api/agent/next     → extension pulls work
-   (resolve id, send DM from your IG session, throttle, stop-on-block)
-   POST /api/agent/result   → backend advances contact state / schedules follow-up
-```
+## Files
+- `manifest.json` — MV3 config (permissions + host access to instagram.com and
+  `*.railway.app`).
+- `background.js` — the agent (send + reply-watch + alarm loop). The two IG
+  endpoints in here (`sendDM`, `readInbox`) are the **volatile layer** — if every
+  send fails, that's what Instagram changed; fix it there.
+- `popup.{html,css,js}` — the control panel (backend URL, Start/Stop, quota, log).
 
-### Wiring into the igscrapper MV3 extension
-1. `manifest.json` `host_permissions` must include **both**:
-   `"https://www.instagram.com/*"` and your backend origin
-   `"http://127.0.0.1/*"` (or the deployed URL).
-2. Add `browser_channel.js` to the MV3 service worker (import in `background.js`
-   or list it alongside it), and set `AGENT.BACKEND` to your backend URL.
-3. Call `startAgent()` to begin delivering, `stopAgent()` to halt. `pollOnce()`
-   sends the current batch once (good for a manual "send now" button).
+## Notes
+- If your backend is on a **custom domain**, add it to `host_permissions` in
+  `manifest.json`, then reload the extension.
+- This only **sends**. Scraping leads is separate — import them via the backend's
+  web console (CSV/JSON), which fills the queue this extension drains.
 
-### Volatile layer
-The only fragile part is the Instagram DM endpoint in `sendDM()`
-(`direct_v2/threads/broadcast/text/`). If every send fails, that endpoint/params
-changed — fix it there, like the scraper's `ENDPOINTS` block.
-
-## Still TODO
-Fold in the full igscrapper scraper (scrape → enrich) and add a "Send to
-campaign →" button that POSTs enriched leads to
-`POST /api/campaigns/<id>/leads`, so scrape → outreach is one flow.
-
-⚠️ Automating DMs violates Instagram's ToS. Use a burner account, keep the
-throttle high (default 45–90s between DMs), and stop at the first block.
+⚠️ Automating DMs violates Instagram's ToS. Burner account, keep it slow, stop at
+the first block.

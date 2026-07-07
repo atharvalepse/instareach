@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="logo">IG</span>
+    <div>
+      <div class="title">Outreach Sender</div>
+      <div class="sub">delivers queued DMs from your session</div>
+    </div>
+  </header>
+
+  <div class="alert" id="loginWarn" hidden>⚠ Not logged into instagram.com in this browser.</div>
+
+  <label>Backend URL (your Railway app)</label>
+  <div class="row">
+    <input id="backend" placeholder="https://web-production-xxxx.up.railway.app" autocomplete="off" spellcheck="false" />
+    <button id="save" class="btn ghost sm">Save</button>
+  </div>
+  <div class="conn" id="conn">not connected</div>
+
+  <div class="stats">
+    <div class="stat"><span class="k">Sent</span><span class="v" id="sent">0</span></div>
+    <div class="stat"><span class="k">Failed</span><span class="v" id="failed">0</span></div>
+    <div class="stat"><span class="k">Left this hr</span><span class="v" id="remaining">–</span></div>
+  </div>
+
+  <div class="actions">
+    <button id="start" class="btn primary">Start sending</button>
+    <button id="stop" class="btn ghost" disabled>Stop</button>
+  </div>
+  <button id="sendNow" class="btn ghost wide">Send one now (test)</button>
+
+  <div class="statusbar" id="statusbar" data-state="idle">
+    <span class="dot"></span><span id="statusText">idle</span>
+  </div>
+
+  <div class="logs" id="logs"></div>
+
+  <p class="fine">
+    Sends from YOUR logged-in Instagram — throttled 60–180s/DM, capped by the
+    backend, and it hard-stops on a block. Violates IG ToS; use a burner.
+  </p>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>
