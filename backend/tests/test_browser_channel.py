@@ -112,6 +112,61 @@ class TestOutbox(unittest.TestCase):
         self.assertFalse(scheduler.apply_send_result(c, oid, "ok", now=T0))  # already handled
 
 
+class TestSendCaps(unittest.TestCase):
+    """Ban-safety: enqueue must never exceed the hourly/daily send caps."""
+
+    def setUp(self):
+        self._h, self._d = scheduler.HOURLY_CAP, scheduler.DAILY_CAP
+        scheduler.HOURLY_CAP, scheduler.DAILY_CAP = 3, 5
+
+    def tearDown(self):
+        scheduler.HOURLY_CAP, scheduler.DAILY_CAP = self._h, self._d
+
+    def _campaign_with(self, n):
+        c = connect(":memory:")
+        c.execute("INSERT INTO campaigns (id, name, tone, sequence_json, status) VALUES ('c1','A','casual',?, 'running')",
+                  (json.dumps([{"body": "hi", "wait_hours": 0}]),))
+        c.commit()
+        ingest_leads(c, "c1", [{"username": f"u{i}"} for i in range(n)])
+        return c
+
+    def _deliver_all(self, c, now):
+        for it in scheduler.next_pending(c, 100):
+            scheduler.apply_send_result(c, it["id"], "ok", now=now)
+
+    def test_enqueue_capped_at_hourly(self):
+        c = self._campaign_with(10)
+        self.assertEqual(scheduler.enqueue_due(c, now=T0)["queued"], 3)   # hourly cap = 3
+        self.assertEqual(len(scheduler.next_pending(c, 100)), 3)
+
+    def test_in_flight_counts_against_cap(self):
+        c = self._campaign_with(10)
+        scheduler.enqueue_due(c, now=T0)                                  # 3 pending
+        self.assertEqual(scheduler.enqueue_due(c, now=T0)["queued"], 0)   # no headroom (3 in flight)
+
+    def test_hourly_window_rolls_but_daily_binds(self):
+        c = self._campaign_with(10)
+        scheduler.enqueue_due(c, now=T0); self._deliver_all(c, T0)        # 3 delivered
+        # +1h: hourly resets, but daily cap 5 leaves room for only 2 more
+        self.assertEqual(scheduler.enqueue_due(c, now=T0 + timedelta(hours=1, minutes=1))["queued"], 2)
+        self._deliver_all(c, T0 + timedelta(hours=1, minutes=1))          # 5 delivered total
+        # still within the day -> daily cap reached -> nothing
+        self.assertEqual(scheduler.enqueue_due(c, now=T0 + timedelta(hours=2))["queued"], 0)
+
+    def test_daily_window_rolls(self):
+        c = self._campaign_with(10)
+        scheduler.enqueue_due(c, now=T0); self._deliver_all(c, T0)
+        scheduler.enqueue_due(c, now=T0 + timedelta(hours=1, minutes=1)); self._deliver_all(c, T0 + timedelta(hours=1, minutes=1))
+        # +25h: daily window has rolled -> hourly cap applies again -> 3
+        self.assertEqual(scheduler.enqueue_due(c, now=T0 + timedelta(hours=25))["queued"], 3)
+
+    def test_quota_report(self):
+        c = self._campaign_with(10)
+        q = scheduler.quota(c, now=T0)
+        self.assertEqual(q["remaining"], 3)
+        self.assertEqual(q["hourly_cap"], 3)
+
+
 class TestReplyPoller(unittest.TestCase):
     def test_watchlist_only_awaiting_reply_in_running(self):
         c = setup(leads=(LEAD, {"username": "maya"}))

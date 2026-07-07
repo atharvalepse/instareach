@@ -24,7 +24,22 @@ Good fits: **Railway, Render, Fly.io, or any $5 VPS / EC2.**
 | `OUTREACH_DB` | `/data/outreach.db` | SQLite path — put it on the volume |
 | `AUTO_TICK` | `1` | `1` = auto-scheduler on; `0` = manual ticking only |
 | `AUTO_TICK_SECONDS` | `300` | how often follow-ups are enqueued |
+| `HOURLY_CAP` | `8` | **ban-safety**: max DMs enqueued per rolling hour |
+| `DAILY_CAP` | `40` | **ban-safety**: max DMs enqueued per rolling day |
 | `PORT` | `8000` | web port (platforms usually inject this) |
+
+### Ban safety (read this)
+Two layers keep volume safe, and **both matter** — spacing alone doesn't prevent
+bans, volume caps do:
+- **Spacing** — the extension waits **60–180s between each DM** (randomized).
+- **Caps** — the backend refuses to enqueue past `HOURLY_CAP` / `DAILY_CAP`,
+  counting delivered + in-flight, so a big queue can't burst out. Check headroom
+  any time at `GET /api/agent/quota`.
+
+Defaults (8/hr, 40/day) suit a **warmed** account. For a **new/burner** account,
+start much lower (e.g. `HOURLY_CAP=3`, `DAILY_CAP=10`) and raise slowly over a
+couple of weeks. Don't run 24/7 — leave the browser open only during normal
+active hours.
 
 ## Railway
 1. New Project → Deploy from the GitHub repo (uses the `Dockerfile`).

@@ -19,11 +19,12 @@
 const AGENT = {
   BACKEND: "http://127.0.0.1:5000",   // where the brain lives
   APP_ID: "936619743392459",          // instagram.com web app id (same as scraper)
-  pollMs: 15000,                       // how often to ask the backend for work
-  batch: 3,                            // max sends fetched per poll
-  // throttle between individual sends — DMs are far riskier than reads, go slow
-  baseMs: 45000,                       // 45s minimum gap between DMs
-  jitterMs: 45000,                     // + up to 45s random
+  pollMs: 20000,                       // how often to ask the backend for work
+  batch: 2,                            // max sends fetched per poll
+  // throttle between individual sends — DMs are FAR riskier than reads, go slow.
+  // Spacing + the backend's hourly/daily caps together keep volume ban-safe.
+  baseMs: 60000,                       // 60s minimum gap between DMs
+  jitterMs: 120000,                    // + up to 120s random  => 60-180s, avg ~120s
 };
 
 let AGENT_RUNNING = false;

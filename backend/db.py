@@ -83,8 +83,16 @@ def _migrate(conn):
     conn.commit()
 
 
-def log_event(conn, contact_id, username, type_, detail=""):
-    conn.execute(
-        "INSERT INTO events (contact_id, username, type, detail) VALUES (?,?,?,?)",
-        (contact_id, username, type_, detail),
-    )
+def log_event(conn, contact_id, username, type_, detail="", ts=None):
+    """ts (a 'YYYY-MM-DD HH:MM:SS' string) pins the logical time — used so send
+    caps count correctly under an injected clock in tests. Defaults to now."""
+    if ts:
+        conn.execute(
+            "INSERT INTO events (contact_id, username, type, detail, created_at) VALUES (?,?,?,?,?)",
+            (contact_id, username, type_, detail, ts),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO events (contact_id, username, type, detail) VALUES (?,?,?,?)",
+            (contact_id, username, type_, detail),
+        )

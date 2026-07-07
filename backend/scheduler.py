@@ -109,7 +109,7 @@ def run_due(conn, channel, gen=None, now=None, max_sends=100) -> dict:
                next_action_at=?, updated_at=? WHERE id=?""",
             (state, new_num, text, next_at, now.isoformat(), r["id"]),
         )
-        log_event(conn, r["id"], r["username"], "sent", f"step {new_num}/{len(seq)}")
+        log_event(conn, r["id"], r["username"], "sent", f"step {new_num}/{len(seq)}", ts=_fmt(now))
         s["sent"] += 1
 
     conn.commit()
@@ -145,13 +145,46 @@ def _due_step(row, now):
     return row["message_number"], seq
 
 
+# --- ban-safety caps: hard limits on how many DMs go out per hour / per day ---
+# Volume is the real ban vector for cold DMs (spacing alone isn't enough). These
+# are conservative defaults for a warmed account — LOWER them for a new/burner
+# account and ramp up slowly.
+HOURLY_CAP = int(os.environ.get("HOURLY_CAP", 8))
+DAILY_CAP = int(os.environ.get("DAILY_CAP", 40))
+
+
+def _fmt(dt):
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _sent_since(conn, iso):
+    return conn.execute(
+        "SELECT COUNT(*) FROM events WHERE type='sent' AND created_at >= ?", (iso,)
+    ).fetchone()[0]
+
+
+def quota(conn, now=None) -> dict:
+    """How much send headroom is left, counting delivered + in-flight against caps."""
+    now = now or datetime.utcnow()
+    pending = conn.execute("SELECT COUNT(*) FROM outbox WHERE status='pending'").fetchone()[0]
+    sent_hour = _sent_since(conn, _fmt(now - timedelta(hours=1)))
+    sent_day = _sent_since(conn, _fmt(now - timedelta(days=1)))
+    remaining = max(0, min(HOURLY_CAP - sent_hour - pending, DAILY_CAP - sent_day - pending))
+    return {
+        "hourly_cap": HOURLY_CAP, "daily_cap": DAILY_CAP,
+        "sent_last_hour": sent_hour, "sent_last_day": sent_day,
+        "in_flight": pending, "remaining": remaining,
+    }
+
+
 def enqueue_due(conn, gen=None, now=None, max_enqueue=100) -> dict:
-    """Compose every due message and drop it in the outbox for the extension."""
+    """Compose due messages into the outbox — but never exceed the send caps."""
     gen = gen or TemplateGenerator()
     now = now or datetime.utcnow()
+    cap = min(max_enqueue, quota(conn, now)["remaining"])   # ← ban-safety gate
     queued = 0
     for r in conn.execute(_DUE_SELECT).fetchall():
-        if queued >= max_enqueue:
+        if queued >= cap:
             break
         step_index, seq = _due_step(r, now)
         if step_index is None:
@@ -215,7 +248,7 @@ def apply_send_result(conn, outbox_id, status, now=None) -> bool:
             (state, new_num, o["text"], next_at, now.isoformat(), contact["id"]),
         )
         conn.execute("UPDATE outbox SET status='done', updated_at=? WHERE id=?", (now.isoformat(), o["id"]))
-        log_event(conn, contact["id"], o["username"], "sent", f"step {new_num}/{len(seq)} (browser)")
+        log_event(conn, contact["id"], o["username"], "sent", f"step {new_num}/{len(seq)} (browser)", ts=_fmt(now))
     elif status == "blocked":
         # revert so it retries when the campaign is resumed; pause the campaign
         revert = models.QUEUED if step_index == 0 else models.SENT

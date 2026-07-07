@@ -138,6 +138,12 @@ def agent_result():
     return (jsonify(ok=True) if ok else (jsonify(error="unknown or already-handled item"), 400))
 
 
+@app.get("/api/agent/quota")
+def agent_quota():
+    """Send headroom vs the ban-safety caps (hourly/daily)."""
+    return jsonify(scheduler.quota(conn()))
+
+
 @app.get("/api/agent/watchlist")
 def agent_watchlist():
     """Usernames the extension's reply-poller should watch the IG inbox for."""
