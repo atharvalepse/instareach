@@ -13,6 +13,7 @@ and the UI is DryRunChannel.
 
 import json
 import os
+import re
 import sys
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -25,17 +26,52 @@ import models  # noqa: E402
 from db import connect, log_event  # noqa: E402
 
 
+# --- {{variable}} substitution from the uploaded CSV/lead data ----------------
+_VAR = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+
+
+def apply_vars(text: str, data: dict) -> str:
+    """Fill {{column}} placeholders from `data` (case-insensitive). Any variable
+    with no matching value is removed, so raw {{...}} is never sent. Whitespace
+    left by a removed variable is collapsed."""
+    if not text:
+        return text
+    out = _VAR.sub(lambda m: data.get(m.group(1).lower(), ""), text)
+    return " ".join(out.split())
+
+
+def subst_data(raw: dict, lead: LeadEnrichment) -> dict:
+    """Build the substitution map: every uploaded CSV column (lowercased) plus a
+    few friendly derived names. CSV columns win over derived defaults, and
+    {{first_name}} is derived from whatever name-ish column exists."""
+    d = {str(k).strip().lower(): ("" if v is None else str(v)) for k, v in (raw or {}).items()}
+    name_src = (d.get("first_name") or d.get("name") or d.get("full_name")
+                or lead.full_name or lead.first_name or "").strip()
+    first = name_src.split()[0] if name_src else "there"
+    d.setdefault("first_name", first)
+    d.setdefault("name", name_src or first)
+    d.setdefault("username", lead.username)
+    return d
+
+
 # --- message composition -----------------------------------------------------
 def compose_message(gen, lead: LeadEnrichment, ctx: GenerationContext,
-                    step_index: int, body: str) -> str:
-    """Step 0 = full grounded opener (hook + your ask). Steps 1+ = light nudge."""
-    body = (body or "").strip()
+                    step_index: int, body: str, data: dict = None) -> str:
+    """Step 0 = full grounded opener (hook + your ask). Steps 1+ = light nudge.
+    In both, {{column}} placeholders in `body` are filled from `data` (CSV)."""
+    data = data or {}
+    body = apply_vars((body or "").strip(), data)
+    # a friendly first name for the greeting (from CSV name column if the scraped
+    # profile had none) — "there" is our sentinel for "no real name".
+    fn = data.get("first_name") or lead.first_name
+    if fn == "there":
+        fn = ""
     if step_index == 0:
+        if fn and not lead.first_name:
+            lead.first_name = fn                # so the grounded greeting uses it
         return gen.generate(lead, replace(ctx, tail=body)).text
-    name = lead.first_name or "there"
-    nudge = body.replace("{{first_name}}", name)
-    greeting = f"Hey {lead.first_name}" if lead.first_name else "Hey there"
-    return " ".join(f"{greeting}, {nudge}".split())
+    greeting = f"Hey {fn}" if fn else "Hey there"
+    return " ".join(f"{greeting}, {body}".split())
 
 
 # --- one pass of the loop ----------------------------------------------------
@@ -77,9 +113,11 @@ def run_due(conn, channel, gen=None, now=None, max_sends=100) -> dict:
                 continue
             step_index = msg_num
 
-        lead = LeadEnrichment.from_dict(json.loads(r["enrichment_json"] or "{}"))
+        raw = json.loads(r["enrichment_json"] or "{}")
+        lead = LeadEnrichment.from_dict(raw)
         ctx = GenerationContext(tone=r["tone"] or "casual")
-        text = compose_message(gen, lead, ctx, step_index, seq[step_index].get("body", ""))
+        text = compose_message(gen, lead, ctx, step_index, seq[step_index].get("body", ""),
+                               subst_data(raw, lead))
 
         res = channel.send(r["username"], text)
         if res.blocked:
@@ -196,9 +234,11 @@ def enqueue_due(conn, gen=None, now=None, max_enqueue=100) -> dict:
             conn.execute("UPDATE contacts SET state='done', updated_at=? WHERE id=?",
                          (now.isoformat(), r["id"]))
             continue
-        lead = LeadEnrichment.from_dict(json.loads(r["enrichment_json"] or "{}"))
+        raw = json.loads(r["enrichment_json"] or "{}")
+        lead = LeadEnrichment.from_dict(raw)
         ctx = GenerationContext(tone=r["tone"] or "casual")
-        text = compose_message(gen, lead, ctx, step_index, seq[step_index].get("body", ""))
+        text = compose_message(gen, lead, ctx, step_index, seq[step_index].get("body", ""),
+                               subst_data(raw, lead))
         conn.execute(
             """INSERT INTO outbox (campaign_id, contact_id, username, text, step_index, status)
                VALUES (?,?,?,?,?, 'pending')""",

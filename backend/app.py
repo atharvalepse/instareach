@@ -245,10 +245,14 @@ def preview(cid):
     ).fetchall()
     out = []
     for r in rows:
-        lead = LeadEnrichment.from_dict(json.loads(r["enrichment_json"]))
-        # show exactly what message 1 will be (reuses the scheduler's composer)
-        text = scheduler.compose_message(GEN, lead, ctx, 0, step0_body)
-        g = GEN.generate(lead, GenerationContext(tone=camp["tone"], tail=step0_body))
+        raw = json.loads(r["enrichment_json"])
+        lead = LeadEnrichment.from_dict(raw)
+        data = scheduler.subst_data(raw, lead)
+        # show exactly what message 1 will be (reuses the scheduler's composer,
+        # including {{column}} substitution from the uploaded CSV)
+        text = scheduler.compose_message(GEN, lead, ctx, 0, step0_body, data)
+        g = GEN.generate(lead, GenerationContext(tone=camp["tone"],
+                                                 tail=scheduler.apply_vars(step0_body, data)))
         out.append({"username": r["username"], "message": text,
                     "grounded": g.grounded, "used_fields": g.used_fields})
     return jsonify(out)

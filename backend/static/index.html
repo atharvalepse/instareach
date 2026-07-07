@@ -81,9 +81,10 @@
     </div>
     <div class="row2">
       <div><label>Message sequence (one per line — line 1 = opener ask, rest = follow-up nudges)</label>
-        <textarea id="seq">Would love to have you in our collab program.
-Just circling back on this — would love your thoughts!
-Last nudge — still keen to chat?</textarea></div>
+        <textarea id="seq">Loved your work — would love you in our {{company}} collab program.
+Just circling back {{first_name}} — would love your thoughts!
+Last nudge — still keen to chat?</textarea>
+        <p class="disclaimer" id="cols">Use <b>{{column}}</b> to insert any uploaded CSV column — e.g. {{first_name}}, {{company}}, {{city}}. Unknown/empty ones are dropped cleanly (never sent as raw text).</p></div>
       <div><label>Days between follow-ups</label><input id="gap" type="number" value="2" min="1" max="30" /></div>
     </div>
     <button class="btn" id="createBtn">Create campaign</button>
@@ -167,14 +168,19 @@ $("csvBtn").onclick = async () => {
   const f = $("csvFile").files[0];
   if(!f) return alert("Choose a .csv file first.");
   const text = await f.text();
+  // surface the CSV's columns so the user knows which {{vars}} they can use
+  const header = (text.split(/\r?\n/)[0]||"").split(",").map(h=>h.trim()).filter(Boolean);
+  if(header.length) $("cols").innerHTML = "Columns from your CSV you can use as variables: "+
+    header.map(h=>`<code>{{${h}}}</code>`).join(" ");
   showIngest(await api("POST",`/api/campaigns/${CID}/leads/csv`, text, true));
 };
 
 $("csvSampleBtn").onclick = () => {
-  const csv = "instagram,full_name,is_business,category,top_hashtags,inferred_activity\n"+
-    "https://instagram.com/fitwithpriya,Priya Sharma,yes,Fitness Trainer,#fitness #homeworkout,video-first (reels/short-form)\n"+
-    "@thelofibeats,Arjun Producer,yes,Musician/Band,#lofi #beats,carousel-heavy (educational/portfolio)\n"+
-    "wanderlens,Maya,no,,#travelphotography #35mm,photo/lifestyle\n";
+  // includes custom columns (company, city) to show {{variable}} substitution
+  const csv = "instagram,full_name,company,city,is_business,category,top_hashtags,inferred_activity\n"+
+    "https://instagram.com/fitwithpriya,Priya Sharma,FitLab,Mumbai,yes,Fitness Trainer,#fitness #homeworkout,video-first (reels/short-form)\n"+
+    "@thelofibeats,Arjun Producer,LoFi Labs,Berlin,yes,Musician/Band,#lofi #beats,carousel-heavy (educational/portfolio)\n"+
+    "wanderlens,Maya,Wander Studio,Goa,no,,#travelphotography #35mm,photo/lifestyle\n";
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download = "sample_leads.csv"; a.click();

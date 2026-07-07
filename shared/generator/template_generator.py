@@ -14,6 +14,7 @@ Hook priority (first one with real data wins):
 """
 
 import random
+import re
 from typing import List, Optional, Tuple
 
 from .base import GeneratedMessage, GenerationContext, MessageGenerator
@@ -140,8 +141,10 @@ class TemplateGenerator(MessageGenerator):
             if ch.isalpha():
                 text = text[:i] + ch.upper() + text[i + 1 :]
                 break
-        # never emit an unresolved placeholder
-        assert "{" not in text and "}" not in text and "%" not in text, f"unfilled template: {text}"
+        # Defensively drop any unfilled {{placeholder}} so raw template syntax is
+        # never sent. (Real user text like "50% off" or "{" passes through fine —
+        # variable substitution happens before this, in the scheduler.)
+        text = " ".join(re.sub(r"\{\{[^{}]*\}\}", "", text).split())
         # length ceiling: trim at the last sentence boundary that fits
         if len(text) > max_chars:
             cut = text[:max_chars]
