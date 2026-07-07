@@ -126,7 +126,9 @@ _DUE_SELECT = (
               c.enrichment_json, ca.id AS cid, ca.sequence_json, ca.tone
        FROM contacts c JOIN campaigns ca ON ca.id = c.campaign_id
        WHERE ca.status = 'running' AND c.state IN ('queued','sent','seen')
-       ORDER BY c.id"""
+       -- follow-ups (sent/seen) BEFORE new intros (queued): they're time-sensitive
+       -- and warmer, so they must not be starved when the daily cap is tight.
+       ORDER BY (c.state = 'queued') ASC, c.id ASC"""
 )
 
 
@@ -146,11 +148,12 @@ def _due_step(row, now):
 
 
 # --- ban-safety caps: hard limits on how many DMs go out per hour / per day ---
-# Volume is the real ban vector for cold DMs (spacing alone isn't enough). These
-# are conservative defaults for a warmed account — LOWER them for a new/burner
-# account and ramp up slowly.
-HOURLY_CAP = int(os.environ.get("HOURLY_CAP", 8))
-DAILY_CAP = int(os.environ.get("DAILY_CAP", 40))
+# Volume is the real ban vector for cold DMs (spacing alone isn't enough).
+# 80/day is a HIGH ceiling that only suits a well-aged, warmed account. LOWER
+# both (e.g. HOURLY_CAP=3, DAILY_CAP=10) for a new/burner account and ramp up.
+# Follow-ups are prioritized within the cap (see _DUE_SELECT ordering).
+HOURLY_CAP = int(os.environ.get("HOURLY_CAP", 10))
+DAILY_CAP = int(os.environ.get("DAILY_CAP", 80))
 
 
 def _fmt(dt):

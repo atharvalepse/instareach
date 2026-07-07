@@ -24,8 +24,8 @@ Good fits: **Railway, Render, Fly.io, or any $5 VPS / EC2.**
 | `OUTREACH_DB` | `/data/outreach.db` | SQLite path — put it on the volume |
 | `AUTO_TICK` | `1` | `1` = auto-scheduler on; `0` = manual ticking only |
 | `AUTO_TICK_SECONDS` | `300` | how often follow-ups are enqueued |
-| `HOURLY_CAP` | `8` | **ban-safety**: max DMs enqueued per rolling hour |
-| `DAILY_CAP` | `40` | **ban-safety**: max DMs enqueued per rolling day |
+| `HOURLY_CAP` | `10` | **ban-safety**: max DMs enqueued per rolling hour |
+| `DAILY_CAP` | `80` | **ban-safety**: max DMs enqueued per rolling day |
 | `PORT` | `8000` | web port (platforms usually inject this) |
 
 ### Ban safety (read this)
@@ -36,10 +36,14 @@ bans, volume caps do:
   counting delivered + in-flight, so a big queue can't burst out. Check headroom
   any time at `GET /api/agent/quota`.
 
-Defaults (8/hr, 40/day) suit a **warmed** account. For a **new/burner** account,
-start much lower (e.g. `HOURLY_CAP=3`, `DAILY_CAP=10`) and raise slowly over a
-couple of weeks. Don't run 24/7 — leave the browser open only during normal
-active hours.
+Follow-ups are **prioritized within the cap** — time-sensitive nudges go out
+before new intros, so raising the ceiling never starves your sequences.
+
+Defaults (10/hr, **80/day**) are a HIGH ceiling — only safe for a **well-aged,
+warmed** account, and even then it's aggressive for cold DMs. For a **new/burner**
+account start much lower (e.g. `HOURLY_CAP=3`, `DAILY_CAP=10`) and raise slowly
+over a couple of weeks. Don't run 24/7 — leave the browser open only during
+normal active hours.
 
 ## Railway
 1. New Project → Deploy from the GitHub repo (uses the `Dockerfile`).

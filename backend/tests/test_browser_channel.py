@@ -166,6 +166,25 @@ class TestSendCaps(unittest.TestCase):
         self.assertEqual(q["remaining"], 3)
         self.assertEqual(q["hourly_cap"], 3)
 
+    def test_followups_prioritized_over_intros_within_cap(self):
+        # one contact with a DUE follow-up + one brand-new intro, cap of 1
+        scheduler.HOURLY_CAP, scheduler.DAILY_CAP = 1, 10
+        c = connect(":memory:")
+        c.execute("INSERT INTO campaigns (id,name,tone,sequence_json,status) VALUES ('c1','A','casual',?, 'running')",
+                  (SEQ,))  # 2-step: opener + follow-up @48h
+        # contact A: already got msg 1, follow-up is due now
+        c.execute("""INSERT INTO contacts (campaign_id, username, enrichment_json, state, message_number, next_action_at)
+                     VALUES ('c1','veteran','{\"username\":\"veteran\"}','sent',1,?)""", (T0.isoformat(),))
+        # contact B: brand new, never messaged
+        c.execute("""INSERT INTO contacts (campaign_id, username, enrichment_json, state)
+                     VALUES ('c1','newbie','{\"username\":\"newbie\"}','queued')""")
+        c.commit()
+        r = scheduler.enqueue_due(c, now=T0)
+        self.assertEqual(r["queued"], 1)                       # cap = 1
+        pend = scheduler.next_pending(c)[0]
+        self.assertEqual(pend["username"], "veteran")          # the FOLLOW-UP won, not the intro
+        self.assertIn("Circling back", pend["text"])
+
 
 class TestReplyPoller(unittest.TestCase):
     def test_watchlist_only_awaiting_reply_in_running(self):
