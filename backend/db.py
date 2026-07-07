@@ -1,92 +1,148 @@
-"""SQLite is the single source of truth.
+"""Postgres is the single source of truth (Supabase in production).
 
-This replaces the old project's three-way split (SQLite + Google Sheets +
-in-memory globals). Everything — campaigns, contacts, their state-machine
-status, and an append-only event log — lives here. Sheets become an optional
-export later, never the brain.
+Connect with a standard Postgres connection string in the DATABASE_URL env var
+(Supabase → Project Settings → Database → Connection string; use the pooler for
+a hosted deploy). Locally you can point it at any Postgres.
 
-Pure stdlib (sqlite3): zero install, runs anywhere.
+Design notes:
+- A thin Conn wrapper keeps the rest of the codebase written with `?`
+  placeholders (translated to psycopg's `%s`) and sqlite3.Row-style rows that
+  support BOTH row["col"] and row[0], so ingest/scheduler/app needed almost no
+  query changes in the switch from SQLite.
+- Timestamps: created_at/updated_at are `timestamp` (naive UTC, matching the
+  code's datetime.utcnow()); next_action_at stays TEXT (ISO strings parsed with
+  datetime.fromisoformat).
 """
 
-import sqlite3
+import os
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS campaigns (
-    id            TEXT PRIMARY KEY,
-    name          TEXT NOT NULL,
-    tone          TEXT DEFAULT 'casual',
-    tail          TEXT DEFAULT '',
-    sequence_json TEXT DEFAULT '[]',            -- [{body, wait_hours}, ...] (step 0 = opener)
-    status        TEXT DEFAULT 'draft',         -- draft|running|paused|done
-    created_at    TEXT DEFAULT (datetime('now'))
-);
+import psycopg
 
-CREATE TABLE IF NOT EXISTS contacts (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    campaign_id     TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-    username        TEXT NOT NULL,
-    enrichment_json TEXT DEFAULT '{}',         -- full scraped row, for (re)generation
-    state           TEXT DEFAULT 'queued',     -- see models.STATES
-    message_number  INTEGER DEFAULT 0,         -- how many msgs sent in the sequence
-    last_message    TEXT DEFAULT '',
-    next_action_at  TEXT,                       -- when the follow-up scheduler should act
-    created_at      TEXT DEFAULT (datetime('now')),
-    updated_at      TEXT DEFAULT (datetime('now')),
-    UNIQUE(campaign_id, username)
-);
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-CREATE TABLE IF NOT EXISTS events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    contact_id  INTEGER REFERENCES contacts(id) ON DELETE CASCADE,
-    username    TEXT,
-    type        TEXT NOT NULL,                  -- ingested|sent|seen|replied|failed|skipped|suppressed
-    detail      TEXT DEFAULT '',
-    created_at  TEXT DEFAULT (datetime('now'))
-);
-
--- Outbox: the queue between the brain (scheduler) and the hands (extension).
--- The scheduler enqueues a composed message; the browser extension pulls it,
--- delivers it from the real IG session, and reports the result back.
-CREATE TABLE IF NOT EXISTS outbox (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    campaign_id  TEXT NOT NULL,
-    contact_id   INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
-    username     TEXT NOT NULL,
-    text         TEXT NOT NULL,
-    step_index   INTEGER NOT NULL,          -- which sequence step this delivers
-    status       TEXT DEFAULT 'pending',    -- pending | done | failed
-    created_at   TEXT DEFAULT (datetime('now')),
-    updated_at   TEXT DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_contacts_username ON contacts(username);
-CREATE INDEX IF NOT EXISTS idx_contacts_campaign ON contacts(campaign_id);
-CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status);
-"""
+SCHEMA = [
+    """CREATE TABLE IF NOT EXISTS campaigns (
+        id            text PRIMARY KEY,
+        name          text NOT NULL,
+        tone          text DEFAULT 'casual',
+        tail          text DEFAULT '',
+        sequence_json text DEFAULT '[]',
+        status        text DEFAULT 'draft',
+        created_at    timestamp DEFAULT (now() AT TIME ZONE 'utc')
+    )""",
+    """CREATE TABLE IF NOT EXISTS contacts (
+        id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        campaign_id     text NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        username        text NOT NULL,
+        enrichment_json text DEFAULT '{}',
+        state           text DEFAULT 'queued',
+        message_number  int DEFAULT 0,
+        last_message    text DEFAULT '',
+        next_action_at  text,
+        created_at      timestamp DEFAULT (now() AT TIME ZONE 'utc'),
+        updated_at      timestamp DEFAULT (now() AT TIME ZONE 'utc'),
+        UNIQUE(campaign_id, username)
+    )""",
+    """CREATE TABLE IF NOT EXISTS events (
+        id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        contact_id bigint REFERENCES contacts(id) ON DELETE CASCADE,
+        username   text,
+        type       text NOT NULL,
+        detail     text DEFAULT '',
+        created_at timestamp DEFAULT (now() AT TIME ZONE 'utc')
+    )""",
+    """CREATE TABLE IF NOT EXISTS outbox (
+        id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        campaign_id text NOT NULL,
+        contact_id  bigint NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+        username    text NOT NULL,
+        text        text NOT NULL,
+        step_index  int NOT NULL,
+        status      text DEFAULT 'pending',
+        created_at  timestamp DEFAULT (now() AT TIME ZONE 'utc'),
+        updated_at  timestamp DEFAULT (now() AT TIME ZONE 'utc')
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_contacts_username ON contacts(username)",
+    "CREATE INDEX IF NOT EXISTS idx_contacts_campaign ON contacts(campaign_id)",
+    "CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status)",
+]
 
 
-def connect(path: str = "backend/outreach.db") -> sqlite3.Connection:
-    """Open (and initialize) the database. Use ':memory:' for tests."""
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(SCHEMA)
-    _migrate(conn)
-    return conn
+class HybridRow:
+    """Row that supports both mapping (row['col']) and positional (row[0]) access
+    and dict(row) — mirrors sqlite3.Row so callers didn't have to change."""
+
+    __slots__ = ("_cols", "_vals", "_map")
+
+    def __init__(self, cols, vals):
+        self._cols = cols
+        self._vals = list(vals)
+        self._map = dict(zip(cols, self._vals))
+
+    def __getitem__(self, k):
+        return self._vals[k] if isinstance(k, int) else self._map[k]
+
+    def get(self, k, default=None):
+        return self._map.get(k, default)
+
+    def keys(self):
+        return self._cols
+
+    def __iter__(self):
+        return iter(self._vals)
+
+    def __len__(self):
+        return len(self._vals)
 
 
-def _migrate(conn):
-    """Idempotent migrations for DB files created by an older schema."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(campaigns)")}
-    if "sequence_json" not in cols:
-        conn.execute("ALTER TABLE campaigns ADD COLUMN sequence_json TEXT DEFAULT '[]'")
-    conn.commit()
+def _hybrid_row(cursor):
+    cols = [d.name for d in (cursor.description or [])]
+    return lambda values: HybridRow(cols, values)
+
+
+class Conn:
+    """Uniform DB handle: `?` placeholders, hybrid rows, explicit commit."""
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def execute(self, sql, params=()):
+        cur = self._raw.cursor()
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def commit(self):
+        self._raw.commit()
+
+    def rollback(self):
+        self._raw.rollback()
+
+    def close(self):
+        try:
+            self._raw.close()
+        except Exception:
+            pass
+
+
+def connect(dsn=None) -> Conn:
+    raw = psycopg.connect(dsn or DATABASE_URL, row_factory=_hybrid_row)
+    _init(raw)
+    return Conn(raw)
+
+
+def _init(raw):
+    with raw.cursor() as cur:
+        for stmt in SCHEMA:
+            cur.execute(stmt)
+        # safety migration for DBs created before sequence_json existed
+        cur.execute("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sequence_json text DEFAULT '[]'")
+    raw.commit()
 
 
 def log_event(conn, contact_id, username, type_, detail="", ts=None):
-    """ts (a 'YYYY-MM-DD HH:MM:SS' string) pins the logical time — used so send
-    caps count correctly under an injected clock in tests. Defaults to now."""
-    if ts:
+    """ts (a datetime) pins the logical event time — used so send caps count
+    correctly under an injected clock in tests. Defaults to now()."""
+    if ts is not None:
         conn.execute(
             "INSERT INTO events (contact_id, username, type, detail, created_at) VALUES (?,?,?,?,?)",
             (contact_id, username, type_, detail, ts),
@@ -96,3 +152,9 @@ def log_event(conn, contact_id, username, type_, detail="", ts=None):
             "INSERT INTO events (contact_id, username, type, detail) VALUES (?,?,?,?)",
             (contact_id, username, type_, detail),
         )
+
+
+def reset_all(conn):
+    """Wipe all data (tests only)."""
+    conn.execute("TRUNCATE outbox, events, contacts, campaigns RESTART IDENTITY CASCADE")
+    conn.commit()

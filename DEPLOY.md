@@ -1,18 +1,18 @@
-# Deploying (always-on host)
+# Deploying (always-on host + Supabase)
 
-The backend is a stateful, always-running service (a SQLite source-of-truth + an
-in-process auto-scheduler). It needs a host that stays up and keeps a disk —
-**not** a serverless platform like Vercel (ephemeral filesystem + no background
-process = it won't work).
+The backend is a stateful, always-running service (a Postgres source-of-truth +
+an in-process auto-scheduler). State lives in **Supabase** (hosted Postgres), so
+the host itself is stateless — but it still must **stay up** to run the
+scheduler, so **not** a serverless platform like Vercel.
 
 Good fits: **Railway, Render, Fly.io, or any $5 VPS / EC2.**
 
 ## Two non-negotiables
 
-1. **A persistent volume for the SQLite DB.** Containers on these platforms have
-   ephemeral filesystems by default — without a mounted disk the DB resets on
-   every redeploy/restart. Mount a volume and point `OUTREACH_DB` at it
-   (the Dockerfile defaults to `/data/outreach.db`).
+1. **A Postgres database (Supabase).** Set `DATABASE_URL` to your Supabase
+   connection string. No volume/disk is needed — the external DB is the
+   persistence. (Supabase → Project Settings → Database → Connection string.)
+   Prefer the **connection pooler** URI for a hosted deploy.
 2. **A single web worker.** The auto-scheduler runs *inside* the web process
    (`--workers 1`). Multiple workers would tick concurrently and double-send.
    For more HTTP throughput use threads (`--threads 8`), not workers.
@@ -21,12 +21,21 @@ Good fits: **Railway, Render, Fly.io, or any $5 VPS / EC2.**
 
 | Var | Default | Purpose |
 |---|---|---|
-| `OUTREACH_DB` | `/data/outreach.db` | SQLite path — put it on the volume |
+| `DATABASE_URL` | — (**required**) | Supabase/Postgres connection string |
 | `AUTO_TICK` | `1` | `1` = auto-scheduler on; `0` = manual ticking only |
 | `AUTO_TICK_SECONDS` | `300` | how often follow-ups are enqueued |
 | `HOURLY_CAP` | `10` | **ban-safety**: max DMs enqueued per rolling hour |
 | `DAILY_CAP` | `80` | **ban-safety**: max DMs enqueued per rolling day |
 | `PORT` | `8000` | web port (platforms usually inject this) |
+
+## Supabase setup
+1. Create a Supabase project.
+2. Copy the connection string: **Project Settings → Database → Connection string**
+   → **URI**. Use the **Connection pooler** (port `6543`, "Transaction" mode) for
+   a hosted backend; the direct string (`5432`) is fine for a single VPS.
+   It looks like `postgresql://postgres.<ref>:<pw>@<host>:6543/postgres`.
+3. Set it as `DATABASE_URL` on your host. The app creates its tables on first
+   boot automatically — no manual SQL/migrations needed.
 
 ### Ban safety (read this)
 Two layers keep volume safe, and **both matter** — spacing alone doesn't prevent
@@ -47,26 +56,27 @@ normal active hours.
 
 ## Railway
 1. New Project → Deploy from the GitHub repo (uses the `Dockerfile`).
-2. Add a **Volume**, mount path `/data`.
+2. **Variables** → add `DATABASE_URL` = your Supabase pooler URI (+ optionally
+   `HOURLY_CAP`/`DAILY_CAP`). No volume needed.
 3. Deploy. Your API is at the generated URL.
 
 ## Render
 1. New → **Web Service** from the repo (Docker).
-2. Add a **Disk**, mount path `/data`.
-3. Set env vars above. Deploy.
+2. Add env var `DATABASE_URL` (Supabase). No disk needed.
+3. Deploy.
 
 ## Fly.io
 ```bash
 fly launch --no-deploy
-fly volumes create data --size 1
-# in fly.toml add:  [mounts]  source="data"  destination="/data"
+fly secrets set DATABASE_URL="postgresql://...supabase-pooler..."
 fly deploy
 ```
 
 ## Plain VPS / EC2
 ```bash
 docker build -t outreach .
-docker run -d -p 8000:8000 -v /opt/outreach-data:/data --restart unless-stopped outreach
+docker run -d -p 8000:8000 -e DATABASE_URL="postgresql://...supabase..." \
+  --restart unless-stopped outreach
 ```
 
 ## After deploy — point the extension at it

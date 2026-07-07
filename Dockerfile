@@ -1,6 +1,9 @@
 # Always-on host image for the outreach backend (Railway / Render / Fly / VPS).
 # Runs the Flask API + the in-process auto-scheduler as a SINGLE gunicorn worker
-# (one worker so exactly one scheduler thread ticks, and SQLite has one writer).
+# (one worker so exactly one scheduler thread ticks).
+#
+# State lives in Postgres (Supabase) — set DATABASE_URL at deploy time. No
+# volume needed; the external DB IS the persistence.
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -9,9 +12,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY . .
 
-# Persist the SQLite DB on a mounted volume (see DEPLOY.md). Without a volume the
-# DB resets on redeploy/restart.
-ENV OUTREACH_DB=/data/outreach.db
+# DATABASE_URL is REQUIRED (Supabase connection string) — provide it in the host's env.
 ENV AUTO_TICK=1
 ENV AUTO_TICK_SECONDS=300
 ENV PORT=8000

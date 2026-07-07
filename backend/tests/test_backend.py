@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(HERE))          # backend/
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))  # repo root
 
 from db import connect  # noqa: E402
+from dbtest import fresh_db  # noqa: E402
 from ingest import ingest_leads  # noqa: E402
 import models  # noqa: E402
 from channels import DryRunChannel, ServerChannel  # noqa: E402
@@ -27,7 +28,7 @@ LEAD = {"username": "@FitWithPriya", "full_name": "Priya Sharma",
 
 
 def mkdb():
-    c = connect(":memory:")
+    c = fresh_db()
     c.execute("INSERT INTO campaigns (id, name) VALUES ('c1', 'A')")
     c.execute("INSERT INTO campaigns (id, name) VALUES ('c2', 'B')")
     c.commit()

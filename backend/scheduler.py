@@ -147,7 +147,7 @@ def run_due(conn, channel, gen=None, now=None, max_sends=100) -> dict:
                next_action_at=?, updated_at=? WHERE id=?""",
             (state, new_num, text, next_at, now.isoformat(), r["id"]),
         )
-        log_event(conn, r["id"], r["username"], "sent", f"step {new_num}/{len(seq)}", ts=_fmt(now))
+        log_event(conn, r["id"], r["username"], "sent", f"step {new_num}/{len(seq)}", ts=now)
         s["sent"] += 1
 
     conn.commit()
@@ -194,22 +194,19 @@ HOURLY_CAP = int(os.environ.get("HOURLY_CAP", 10))
 DAILY_CAP = int(os.environ.get("DAILY_CAP", 80))
 
 
-def _fmt(dt):
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _sent_since(conn, iso):
+def _sent_since(conn, since_dt):
+    # since_dt is a datetime; psycopg adapts it to a timestamp for the comparison
     return conn.execute(
-        "SELECT COUNT(*) FROM events WHERE type='sent' AND created_at >= ?", (iso,)
-    ).fetchone()[0]
+        "SELECT COUNT(*) AS n FROM events WHERE type='sent' AND created_at >= ?", (since_dt,)
+    ).fetchone()["n"]
 
 
 def quota(conn, now=None) -> dict:
     """How much send headroom is left, counting delivered + in-flight against caps."""
     now = now or datetime.utcnow()
-    pending = conn.execute("SELECT COUNT(*) FROM outbox WHERE status='pending'").fetchone()[0]
-    sent_hour = _sent_since(conn, _fmt(now - timedelta(hours=1)))
-    sent_day = _sent_since(conn, _fmt(now - timedelta(days=1)))
+    pending = conn.execute("SELECT COUNT(*) AS n FROM outbox WHERE status='pending'").fetchone()["n"]
+    sent_hour = _sent_since(conn, now - timedelta(hours=1))
+    sent_day = _sent_since(conn, now - timedelta(days=1))
     remaining = max(0, min(HOURLY_CAP - sent_hour - pending, DAILY_CAP - sent_day - pending))
     return {
         "hourly_cap": HOURLY_CAP, "daily_cap": DAILY_CAP,
@@ -291,7 +288,7 @@ def apply_send_result(conn, outbox_id, status, now=None) -> bool:
             (state, new_num, o["text"], next_at, now.isoformat(), contact["id"]),
         )
         conn.execute("UPDATE outbox SET status='done', updated_at=? WHERE id=?", (now.isoformat(), o["id"]))
-        log_event(conn, contact["id"], o["username"], "sent", f"step {new_num}/{len(seq)} (browser)", ts=_fmt(now))
+        log_event(conn, contact["id"], o["username"], "sent", f"step {new_num}/{len(seq)} (browser)", ts=now)
     elif status == "blocked":
         # revert so it retries when the campaign is resumed; pause the campaign
         revert = models.QUEUED if step_index == 0 else models.SENT
@@ -331,7 +328,7 @@ def mark_replied_global(conn, username) -> int:
         (username,),
     ).fetchall()
     for r in rows:
-        conn.execute("UPDATE contacts SET state='replied', updated_at=datetime('now') WHERE id=?", (r["id"],))
+        conn.execute("UPDATE contacts SET state='replied', updated_at=now() WHERE id=?", (r["id"],))
         log_event(conn, r["id"], username, "replied", "auto-detected from IG inbox")
     conn.commit()
     return len(rows)
@@ -346,10 +343,10 @@ def mark_event(conn, campaign_id, username, type_) -> bool:
     if not row:
         return False
     if type_ == "replied":
-        conn.execute("UPDATE contacts SET state='replied', updated_at=datetime('now') WHERE id=?", (row["id"],))
+        conn.execute("UPDATE contacts SET state='replied', updated_at=now() WHERE id=?", (row["id"],))
     elif type_ == "seen":
         if row["state"] == models.SENT:
-            conn.execute("UPDATE contacts SET state='seen', updated_at=datetime('now') WHERE id=?", (row["id"],))
+            conn.execute("UPDATE contacts SET state='seen', updated_at=now() WHERE id=?", (row["id"],))
     else:
         return False
     log_event(conn, row["id"], username, type_, "")
@@ -358,7 +355,7 @@ def mark_event(conn, campaign_id, username, type_) -> bool:
 
 
 # --- standalone durable runner ----------------------------------------------
-def run_forever(db_path, interval=300, mode="enqueue"):
+def run_forever(interval=300, mode="enqueue"):
     """Tick forever; state is in the DB so restarts resume cleanly.
 
     mode='enqueue' (default, browser channel): queue due messages for the
@@ -367,22 +364,26 @@ def run_forever(db_path, interval=300, mode="enqueue"):
     import time
     gen = TemplateGenerator()
     while True:
+        c = None
         try:
+            c = connect()
             if mode == "dryrun":
                 from channels import DryRunChannel
-                s = run_due(connect(db_path), DryRunChannel(), gen)
+                s = run_due(c, DryRunChannel(), gen)
                 if s["sent"] or s["blocked"] or s["failed"]:
                     print(f"[scheduler] {s}")
             else:
-                r = enqueue_due(connect(db_path), gen)
+                r = enqueue_due(c, gen)
                 if r["queued"]:
                     print(f"[scheduler] enqueued {r['queued']}")
         except Exception as e:
             print(f"[scheduler] error: {e}")
+        finally:
+            if c is not None:
+                c.close()
         time.sleep(interval)
 
 
 if __name__ == "__main__":
-    path = os.environ.get("OUTREACH_DB", os.path.join(os.path.dirname(__file__), "outreach.db"))
-    run_forever(path, interval=int(os.environ.get("AUTO_TICK_SECONDS", 300)),
+    run_forever(interval=int(os.environ.get("AUTO_TICK_SECONDS", 300)),
                 mode=os.environ.get("SCHEDULER_MODE", "enqueue"))

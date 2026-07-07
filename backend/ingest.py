@@ -75,17 +75,21 @@ def ingest_leads(conn, campaign_id, rows, suppress_cross_campaign=True) -> Inges
             log_event(conn, None, lead.username, models.SUPPRESSED, "engaged in another campaign")
             continue
 
-        try:
-            cur = conn.execute(
-                """INSERT INTO contacts (campaign_id, username, enrichment_json, state)
-                   VALUES (?,?,?,?)""",
-                (campaign_id, lead.username, json.dumps(row), models.QUEUED),
-            )
-            log_event(conn, cur.lastrowid, lead.username, "ingested", "")
+        # ON CONFLICT keeps the transaction alive (an INSERT that raised would
+        # abort the whole Postgres transaction). RETURNING tells us insert vs dup.
+        cur = conn.execute(
+            """INSERT INTO contacts (campaign_id, username, enrichment_json, state)
+               VALUES (?,?,?,?)
+               ON CONFLICT (campaign_id, username) DO NOTHING
+               RETURNING id""",
+            (campaign_id, lead.username, json.dumps(row), models.QUEUED),
+        )
+        inserted = cur.fetchone()
+        if inserted:
+            log_event(conn, inserted["id"], lead.username, "ingested", "")
             summary.inserted += 1
-        except Exception:
-            # UNIQUE(campaign_id, username) violation = already in this campaign
-            summary.duplicates += 1
+        else:
+            summary.duplicates += 1        # already in this campaign
 
     conn.commit()
     return summary

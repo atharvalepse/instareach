@@ -29,7 +29,7 @@ ig-outreach-suite/
 │   ├── template_generator.py   #   3 voice presets (casual/professional/warm)
 │   └── spintax.py
 ├── backend/               # ✅ Phase-0 brain
-│   ├── db.py              #   SQLite = single source of truth (campaigns/contacts/events)
+│   ├── db.py              #   Postgres/Supabase = single source of truth (campaigns/contacts/events)
 │   ├── models.py          #   contact state machine + cross-campaign suppression states
 │   ├── ingest.py          #   extension→backend handoff (dedup + suppression)
 │   ├── channels/          #   SendChannel: DryRunChannel + ServerChannel (instagrapi, lazy)
@@ -46,11 +46,11 @@ ig-outreach-suite/
 python3 run_demo.py --tone professional --regen 3 --tail "Would love to chat."
 python3 -m unittest discover -s tests           # 16 tests
 
-# backend logic (no deps — DB, ingest, channels, end-to-end ingest→generate)
-python3 -m unittest discover -s backend/tests    # 12 tests
-
-# run the API (needs Flask)
-pip install -r backend/requirements.txt && python3 backend/app.py
+# backend (needs Postgres — set DATABASE_URL to a Postgres/Supabase connection)
+pip install -r backend/requirements.txt
+export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+python3 -m unittest discover -s backend/tests    # backend suite
+python3 backend/app.py                            # run the API
 ```
 
 The generator **only references fields that were actually scraped** (no model =

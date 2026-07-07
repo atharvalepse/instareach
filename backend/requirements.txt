@@ -1,5 +1,6 @@
 Flask>=3.0
 gunicorn>=21.0
+psycopg[binary]>=3.1        # Postgres / Supabase driver (set DATABASE_URL)
 
 # Optional: only needed for ServerChannel (server-side instagrapi sending).
 # The rest of the backend runs without it.

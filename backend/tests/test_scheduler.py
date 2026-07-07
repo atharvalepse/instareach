@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(HERE))                      # backend/
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))     # repo root
 
 from db import connect  # noqa: E402
+from dbtest import fresh_db  # noqa: E402
 from ingest import ingest_leads  # noqa: E402
 from channels import DryRunChannel  # noqa: E402
 import scheduler  # noqa: E402
@@ -35,7 +36,7 @@ SEQ = json.dumps([
 
 
 def setup(seq=SEQ, leads=(LEAD,), running=True):
-    c = connect(":memory:")
+    c = fresh_db()
     c.execute("INSERT INTO campaigns (id, name, tone, sequence_json, status) VALUES (?,?,?,?,?)",
               ("c1", "A", "casual", seq, "running" if running else "draft"))
     c.commit()

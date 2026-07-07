@@ -19,7 +19,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, g, jsonify, request, send_from_directory
 
 sys.path.insert(0, os.path.dirname(__file__))                   # backend/
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # repo root
@@ -31,13 +31,23 @@ from csv_import import rows_from_csv  # noqa: E402
 from channels import DryRunChannel  # noqa: E402
 import scheduler  # noqa: E402
 
-DB_PATH = os.environ.get("OUTREACH_DB", os.path.join(os.path.dirname(__file__), "outreach.db"))
 app = Flask(__name__)
 GEN = TemplateGenerator()
 
 
 def conn():
-    return connect(DB_PATH)
+    """One Postgres connection per request, cached on flask.g and closed in the
+    teardown below — so we never leak connections against Supabase."""
+    if "db" not in g:
+        g.db = connect()
+    return g.db
+
+
+@app.teardown_appcontext
+def _close_db(exc=None):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
 
 
 @app.get("/")
@@ -175,12 +185,17 @@ def _start_auto_scheduler():
     def loop():
         while True:
             time.sleep(interval)
+            c = None
             try:
-                r = scheduler.enqueue_due(conn(), GEN)
+                c = connect()                       # own connection (no request context)
+                r = scheduler.enqueue_due(c, GEN)
                 if r["queued"]:
                     print(f"[auto-tick] enqueued {r['queued']}", flush=True)
             except Exception as e:
                 print(f"[auto-tick] error: {e}", flush=True)
+            finally:
+                if c is not None:
+                    c.close()
 
     threading.Thread(target=loop, daemon=True, name="auto-scheduler").start()
     print(f"[auto-tick] on — enqueuing due messages every {interval}s", flush=True)

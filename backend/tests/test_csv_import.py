@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))     # repo root
 
 from csv_import import rows_from_csv  # noqa: E402
 from db import connect  # noqa: E402
+from dbtest import fresh_db  # noqa: E402
 from ingest import ingest_leads  # noqa: E402
 
 
@@ -37,7 +38,7 @@ class TestCSVImport(unittest.TestCase):
         csv = ("username,full_name,is_business,category,top_hashtags\n"
                "@fitpriya,Priya Sharma,yes,Fitness Trainer,#fit #flow\n")
         rows = rows_from_csv(csv)
-        c = connect(":memory:")
+        c = fresh_db()
         c.execute("INSERT INTO campaigns (id, name) VALUES ('c1','A')")
         c.commit()
         s = ingest_leads(c, "c1", rows)
@@ -49,7 +50,7 @@ class TestCSVImport(unittest.TestCase):
     def test_missing_username_row_is_caught_by_ingest(self):
         rows = rows_from_csv("name,note\nNobody,no handle here\n")
         self.assertEqual(rows[0]["username"], "")
-        c = connect(":memory:")
+        c = fresh_db()
         c.execute("INSERT INTO campaigns (id, name) VALUES ('c1','A')")
         c.commit()
         s = ingest_leads(c, "c1", rows)

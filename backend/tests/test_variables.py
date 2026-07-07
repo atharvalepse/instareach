@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))     # repo root
 
 import scheduler  # noqa: E402
 from db import connect  # noqa: E402
+from dbtest import fresh_db  # noqa: E402
 from ingest import ingest_leads  # noqa: E402
 from csv_import import rows_from_csv  # noqa: E402
 from shared.generator import GenerationContext, LeadEnrichment, TemplateGenerator  # noqa: E402
@@ -67,7 +68,7 @@ class TestEndToEndCSVVars(unittest.TestCase):
     def test_csv_upload_then_substitute(self):
         csv = "instagram,name,company,city\n@priya,Priya,Acme Inc,Mumbai\n"
         rows = rows_from_csv(csv)
-        c = connect(":memory:")
+        c = fresh_db()
         c.execute("""INSERT INTO campaigns (id,name,tone,sequence_json,status)
                      VALUES ('c1','A','casual',?, 'running')""",
                   (json.dumps([{"body": "love your work at {{company}} in {{city}}!", "wait_hours": 0}]),))

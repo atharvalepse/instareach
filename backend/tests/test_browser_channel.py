@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(HERE))                      # backend/
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))     # repo root
 
 from db import connect  # noqa: E402
+from dbtest import fresh_db  # noqa: E402
 from ingest import ingest_leads  # noqa: E402
 import scheduler  # noqa: E402
 
@@ -28,7 +29,7 @@ SEQ = json.dumps([
 
 
 def setup(seq=SEQ, leads=(LEAD,)):
-    c = connect(":memory:")
+    c = fresh_db()
     c.execute("INSERT INTO campaigns (id, name, tone, sequence_json, status) VALUES (?,?,?,?,?)",
               ("c1", "A", "casual", seq, "running"))
     c.commit()
@@ -123,7 +124,7 @@ class TestSendCaps(unittest.TestCase):
         scheduler.HOURLY_CAP, scheduler.DAILY_CAP = self._h, self._d
 
     def _campaign_with(self, n):
-        c = connect(":memory:")
+        c = fresh_db()
         c.execute("INSERT INTO campaigns (id, name, tone, sequence_json, status) VALUES ('c1','A','casual',?, 'running')",
                   (json.dumps([{"body": "hi", "wait_hours": 0}]),))
         c.commit()
@@ -169,7 +170,7 @@ class TestSendCaps(unittest.TestCase):
     def test_followups_prioritized_over_intros_within_cap(self):
         # one contact with a DUE follow-up + one brand-new intro, cap of 1
         scheduler.HOURLY_CAP, scheduler.DAILY_CAP = 1, 10
-        c = connect(":memory:")
+        c = fresh_db()
         c.execute("INSERT INTO campaigns (id,name,tone,sequence_json,status) VALUES ('c1','A','casual',?, 'running')",
                   (SEQ,))  # 2-step: opener + follow-up @48h
         # contact A: already got msg 1, follow-up is due now
