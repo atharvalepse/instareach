@@ -22,6 +22,7 @@ async function refresh() {
     conn.textContent = "backend unreachable (check the URL / that it's deployed)"; conn.className = "conn bad";
   }
 
+  if (s.speed && document.activeElement !== $("speed")) $("speed").value = s.speed;
   $("start").disabled = s.running;
   $("stop").disabled = !s.running;
   $("statusbar").dataset.state = s.running ? "run" : (s.log?.[0] && /BLOCKED|Stopped/i.test(s.log[0]) ? "stop" : "idle");
@@ -30,11 +31,12 @@ async function refresh() {
 }
 
 $("save").onclick = async () => { await msg({ type: "SAVE_BACKEND", backend: $("backend").value.trim() }); refresh(); };
+$("speed").onchange = async () => { await msg({ type: "SAVE_SPEED", speed: $("speed").value }); };
 $("start").onclick = async () => {
   const backend = $("backend").value.trim();
   if (!backend) return alert("Paste your Railway backend URL first.");
   if (!confirm("Start sending real DMs from this Instagram account?\n\nUse a burner. It stops automatically on a block.")) return;
-  await msg({ type: "START", backend });
+  await msg({ type: "START", backend, speed: $("speed").value });
   refresh();
 };
 $("stop").onclick = async () => { await msg({ type: "STOP" }); refresh(); };

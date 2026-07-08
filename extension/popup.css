@@ -8,8 +8,8 @@ header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .title{font-size:14px;font-weight:700;line-height:1.1}
 .sub{font-size:10.5px;color:var(--muted)}
 label{display:block;font-size:11px;font-weight:600;color:#475569;margin:10px 0 5px}
-input{width:100%;padding:8px 10px;font-size:12px;border:1px solid var(--line2);border-radius:var(--r);color:var(--fg)}
-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.15)}
+input,select{width:100%;padding:8px 10px;font-size:12px;border:1px solid var(--line2);border-radius:var(--r);color:var(--fg);background:#fff}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.15)}
 .row{display:flex;gap:6px}
 .row input{flex:1}
 .conn{font-size:11px;color:var(--muted);margin-top:5px}

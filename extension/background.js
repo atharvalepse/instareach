@@ -15,18 +15,21 @@
 const IG_APP_ID = "936619743392459";
 const ALARM = "agent-tick";
 const TICK_MIN = 0.5;                 // alarm period: 30s (Chrome minimum)
-const GAP_MIN = 60000, GAP_MAX = 180000;   // 60–180s between DMs
 const REPLY_EVERY = 120000;           // check the inbox every 2 min
 
+// Gap between DMs by chosen speed. Safe is ban-friendly; Fast/Test are riskier.
+const GAPS = { safe: [60000, 180000], fast: [15000, 45000], test: [4000, 9000] };
 const rnd = (a, b) => a + Math.floor(Math.random() * (b - a));
+const gapFor = (speed) => { const g = GAPS[speed] || GAPS.safe; return rnd(g[0], g[1]); };
 
 // ---- config / state -------------------------------------------------------
 async function state() {
   const d = await chrome.storage.local.get(
-    ["backend", "running", "lastSendAt", "gapMs", "lastReplyAt", "stats", "log"]);
+    ["backend", "running", "speed", "lastSendAt", "gapMs", "lastReplyAt", "stats", "log"]);
   return {
     backend: (d.backend || "").replace(/\/+$/, ""),
     running: !!d.running,
+    speed: d.speed || "safe",
     lastSendAt: d.lastSendAt || 0,
     gapMs: d.gapMs || 0,
     lastReplyAt: d.lastReplyAt || 0,
@@ -103,11 +106,14 @@ const apiPost = (b, p, body) =>
   fetch(b + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 // ---- one unit of work -----------------------------------------------------
-async function sendOne(backend) {
+async function sendOne(backend, verbose = false) {
   let items = [];
   try { items = await apiGet(backend, "/api/agent/next?limit=1"); }
   catch { await log("Backend unreachable — check the URL and that it's running."); return; }
-  if (!Array.isArray(items) || !items.length) return;      // nothing queued right now
+  if (!Array.isArray(items) || !items.length) {
+    if (verbose) await log("Nothing queued. In the console: Start a campaign, then click 'Queue for sending'.");
+    return;
+  }
   const it = items[0];
   try {
     const uid = await resolveUserId(it.username);
@@ -159,7 +165,7 @@ async function tick() {
     await replyWatch(s.backend);
   }
   if (now - s.lastSendAt >= (s.gapMs || 0)) {
-    await set({ lastSendAt: Date.now(), gapMs: rnd(GAP_MIN, GAP_MAX) });   // reserve the slot first
+    await set({ lastSendAt: Date.now(), gapMs: gapFor(s.speed) });   // reserve the slot first
     await sendOne(s.backend);
   }
 }
@@ -170,9 +176,10 @@ chrome.alarms.onAlarm.addListener((a) => { if (a.name === ALARM) tick(); });
 chrome.runtime.onMessage.addListener((m, _s, reply) => {
   (async () => {
     if (m.type === "START") {
-      await set({ running: true, backend: (m.backend || "").replace(/\/+$/, ""), lastSendAt: 0, gapMs: 0 });
+      await set({ running: true, backend: (m.backend || "").replace(/\/+$/, ""),
+                  speed: m.speed || "safe", lastSendAt: 0, gapMs: 0 });
       await chrome.alarms.create(ALARM, { periodInMinutes: TICK_MIN });
-      await log("▶ Started sending.");
+      await log(`▶ Started sending (${m.speed || "safe"} speed).`);
       tick();
       reply({ ok: true });
     } else if (m.type === "STOP") {
@@ -183,9 +190,14 @@ chrome.runtime.onMessage.addListener((m, _s, reply) => {
     } else if (m.type === "SAVE_BACKEND") {
       await set({ backend: (m.backend || "").replace(/\/+$/, "") });
       reply({ ok: true });
+    } else if (m.type === "SAVE_SPEED") {
+      await set({ speed: m.speed || "safe" });
+      reply({ ok: true });
     } else if (m.type === "SEND_NOW") {
       const s = await state();
-      if (s.backend && (await loggedIn())) await sendOne(s.backend);
+      if (!s.backend) await log("Set the backend URL first.");
+      else if (!(await loggedIn())) await log("Not logged into instagram.com.");
+      else await sendOne(s.backend, true);   // verbose: tells you if nothing's queued
       reply({ ok: true });
     } else if (m.type === "STATUS") {
       const s = await state();

@@ -127,9 +127,10 @@
     <div class="step"><span class="num">4</span> Run &amp; follow-ups <span class="muted" style="text-transform:none;font-weight:500">(preview loop — the extension does the real sending)</span></div>
     <div class="bar">
       <button class="btn" id="startBtn">Start campaign</button>
-      <button class="btn sec" id="tickBtn">Run tick</button>
+      <button class="btn" id="queueBtn">Queue for sending →</button>
+      <button class="btn sec" id="tickBtn">Run tick (preview)</button>
       <span class="muted">advance time</span>
-      <input id="adv" type="number" value="0" min="0" style="width:90px" /> <span class="muted">hours</span>
+      <input id="adv" type="number" value="0" min="0" style="width:80px" /> <span class="muted">hrs</span>
       <button class="btn sec" id="refreshBtn">Refresh</button>
     </div>
     <span id="tickOut" class="muted mt" style="display:block"></span>
@@ -251,7 +252,15 @@ $("previewBtn").onclick = async () => {
 $("startBtn").onclick = async () => {
   if(!CID) return alert("Create a campaign first.");
   await api("POST",`/api/campaigns/${CID}/start`);
-  $("tickOut").innerHTML = '<span class="ok">campaign is running — the extension will now pull &amp; send</span>'; refreshContacts();
+  const r = await api("POST","/api/agent/enqueue",{});   // fill the outbox NOW (no 5-min wait)
+  $("tickOut").innerHTML = `<span class="ok">running · queued ${r.queued} DM(s) for the extension to send</span>`;
+  refreshContacts();
+};
+$("queueBtn").onclick = async () => {
+  if(!CID) return alert("Create + start a campaign first.");
+  const r = await api("POST","/api/agent/enqueue",{});
+  $("tickOut").innerHTML = `<span class="ok">queued ${r.queued} DM(s) for the extension → open the extension and click "Send one now"</span>`;
+  refreshContacts();
 };
 $("tickBtn").onclick = async () => {
   if(!CID) return alert("Create + start a campaign first.");
