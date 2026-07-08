@@ -7,35 +7,38 @@ scheduler, so **not** a serverless platform like Vercel.
 
 Good fits: **Railway, Render, Fly.io, or any $5 VPS / EC2.**
 
-## Two non-negotiables
+## Database: zero-config, or Supabase for persistence
 
-1. **A Postgres database (Supabase).** Set `DATABASE_URL` to your Supabase
-   connection string. No volume/disk is needed — the external DB is the
-   persistence. (Supabase → Project Settings → Database → Connection string.)
-   Prefer the **connection pooler** URI for a hosted deploy.
-2. **A single web worker.** The auto-scheduler runs *inside* the web process
-   (`--workers 1`). Multiple workers would tick concurrently and double-send.
-   For more HTTP throughput use threads (`--threads 8`), not workers.
+- **No `DATABASE_URL`** → the app uses a built-in **SQLite** file and **just
+  works** with no setup. Caveat: on Railway/containers the disk is ephemeral, so
+  data (campaigns, contacts, queue) **resets on every redeploy/restart**. Fine
+  for trying it out or short runs.
+- **Set `DATABASE_URL`** → the app uses **Postgres/Supabase** and state persists
+  across redeploys. Recommended once you're running real campaigns.
+
+Either way, tables are created automatically on first boot — no migrations.
+
+**One non-negotiable regardless:** a **single web worker**. The auto-scheduler
+runs *inside* the web process (`--workers 1`); multiple workers would tick
+concurrently and double-send. Use threads (`--threads 8`) for HTTP throughput.
 
 ## Environment variables
 
 | Var | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | — (**required**) | Supabase/Postgres connection string |
+| `DATABASE_URL` | *(unset → SQLite)* | Supabase/Postgres string for persistence |
 | `AUTO_TICK` | `1` | `1` = auto-scheduler on; `0` = manual ticking only |
 | `AUTO_TICK_SECONDS` | `300` | how often follow-ups are enqueued |
 | `HOURLY_CAP` | `10` | **ban-safety**: max DMs enqueued per rolling hour |
 | `DAILY_CAP` | `80` | **ban-safety**: max DMs enqueued per rolling day |
 | `PORT` | `8000` | web port (platforms usually inject this) |
 
-## Supabase setup
+## Adding Supabase later (optional)
 1. Create a Supabase project.
-2. Copy the connection string: **Project Settings → Database → Connection string**
-   → **URI**. Use the **Connection pooler** (port `6543`, "Transaction" mode) for
-   a hosted backend; the direct string (`5432`) is fine for a single VPS.
-   It looks like `postgresql://postgres.<ref>:<pw>@<host>:6543/postgres`.
-3. Set it as `DATABASE_URL` on your host. The app creates its tables on first
-   boot automatically — no manual SQL/migrations needed.
+2. **Project Settings → Database → Connection string → URI** → use the
+   **Connection pooler** (port `6543`, "Transaction" mode):
+   `postgresql://postgres.<ref>:<pw>@<host>:6543/postgres`.
+3. Set it as `DATABASE_URL`. Done — the app switches to Postgres on next boot.
 
 ### Ban safety (read this)
 Two layers keep volume safe, and **both matter** — spacing alone doesn't prevent

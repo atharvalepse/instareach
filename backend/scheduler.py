@@ -328,7 +328,7 @@ def mark_replied_global(conn, username) -> int:
         (username,),
     ).fetchall()
     for r in rows:
-        conn.execute("UPDATE contacts SET state='replied', updated_at=now() WHERE id=?", (r["id"],))
+        conn.execute("UPDATE contacts SET state='replied', updated_at=CURRENT_TIMESTAMP WHERE id=?", (r["id"],))
         log_event(conn, r["id"], username, "replied", "auto-detected from IG inbox")
     conn.commit()
     return len(rows)
@@ -343,10 +343,10 @@ def mark_event(conn, campaign_id, username, type_) -> bool:
     if not row:
         return False
     if type_ == "replied":
-        conn.execute("UPDATE contacts SET state='replied', updated_at=now() WHERE id=?", (row["id"],))
+        conn.execute("UPDATE contacts SET state='replied', updated_at=CURRENT_TIMESTAMP WHERE id=?", (row["id"],))
     elif type_ == "seen":
         if row["state"] == models.SENT:
-            conn.execute("UPDATE contacts SET state='seen', updated_at=now() WHERE id=?", (row["id"],))
+            conn.execute("UPDATE contacts SET state='seen', updated_at=CURRENT_TIMESTAMP WHERE id=?", (row["id"],))
     else:
         return False
     log_event(conn, row["id"], username, type_, "")
