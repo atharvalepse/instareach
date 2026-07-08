@@ -29,7 +29,7 @@ LEAD2 = {"username": "maya", "full_name": "Maya", "top_hashtags": "#travel"}
 
 # 3-step sequence: opener now, follow-up after 48h, final after another 72h
 SEQ = json.dumps([
-    {"body": "Would love to collab.", "wait_hours": 0},
+    {"body": "Hi {{first_name}}, Would love to collab.", "wait_hours": 0},
     {"body": "Just circling back on this!", "wait_hours": 48},
     {"body": "Last nudge — still keen?", "wait_hours": 72},
 ])

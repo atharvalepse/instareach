@@ -26,17 +26,19 @@ import models  # noqa: E402
 from db import connect, log_event  # noqa: E402
 
 
-# --- {{variable}} substitution from the uploaded CSV/lead data ----------------
-_VAR = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+# --- variable substitution from the uploaded CSV/lead data -------------------
+# Supports both {{column}} and %column% so it's forgiving of either style.
+# %column% only matches a letter-led token so it never eats "50%" or "20% off".
+_VAR = re.compile(r"\{\{\s*(\w+)\s*\}\}|%([a-zA-Z_]\w*)%")
 
 
 def apply_vars(text: str, data: dict) -> str:
-    """Fill {{column}} placeholders from `data` (case-insensitive). Any variable
-    with no matching value is removed, so raw {{...}} is never sent. Whitespace
-    left by a removed variable is collapsed."""
+    """Fill {{column}} / %column% placeholders from `data` (case-insensitive).
+    Any variable with no matching value is removed, so raw placeholders are never
+    sent. Whitespace left by a removed variable is collapsed."""
     if not text:
         return text
-    out = _VAR.sub(lambda m: data.get(m.group(1).lower(), ""), text)
+    out = _VAR.sub(lambda m: data.get((m.group(1) or m.group(2)).lower(), ""), text)
     return " ".join(out.split())
 
 
@@ -57,21 +59,9 @@ def subst_data(raw: dict, lead: LeadEnrichment) -> dict:
 # --- message composition -----------------------------------------------------
 def compose_message(gen, lead: LeadEnrichment, ctx: GenerationContext,
                     step_index: int, body: str, data: dict = None) -> str:
-    """Step 0 = full grounded opener (hook + your ask). Steps 1+ = light nudge.
-    In both, {{column}} placeholders in `body` are filled from `data` (CSV)."""
-    data = data or {}
-    body = apply_vars((body or "").strip(), data)
-    # a friendly first name for the greeting (from CSV name column if the scraped
-    # profile had none) — "there" is our sentinel for "no real name".
-    fn = data.get("first_name") or lead.first_name
-    if fn == "there":
-        fn = ""
-    if step_index == 0:
-        if fn and not lead.first_name:
-            lead.first_name = fn                # so the grounded greeting uses it
-        return gen.generate(lead, replace(ctx, tail=body)).text
-    greeting = f"Hey {fn}" if fn else "Hey there"
-    return " ".join(f"{greeting}, {body}".split())
+    """WYSIWYG: send exactly the message the user wrote, with {{col}}/%col%
+    variables filled from the CSV/lead data. (gen/ctx kept for call compat.)"""
+    return apply_vars((body or "").strip(), data or {})
 
 
 # --- one pass of the loop ----------------------------------------------------

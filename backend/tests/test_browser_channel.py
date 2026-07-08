@@ -23,7 +23,7 @@ import scheduler  # noqa: E402
 T0 = datetime(2026, 1, 1, 12, 0, 0)
 LEAD = {"username": "priya", "full_name": "Priya Sharma", "is_business": "yes", "category": "Fitness Trainer"}
 SEQ = json.dumps([
-    {"body": "Would love to collab.", "wait_hours": 0},
+    {"body": "Hi {{first_name}}, Would love to collab.", "wait_hours": 0},
     {"body": "Circling back!", "wait_hours": 48},
 ])
 

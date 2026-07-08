@@ -276,13 +276,9 @@ def preview(cid):
         raw = json.loads(r["enrichment_json"])
         lead = LeadEnrichment.from_dict(raw)
         data = scheduler.subst_data(raw, lead)
-        # show exactly what message 1 will be (reuses the scheduler's composer,
-        # including {{column}} substitution from the uploaded CSV)
-        text = scheduler.compose_message(GEN, lead, ctx, 0, step0_body, data)
-        g = GEN.generate(lead, GenerationContext(tone=camp["tone"],
-                                                 tail=scheduler.apply_vars(step0_body, data)))
-        out.append({"username": r["username"], "message": text,
-                    "grounded": g.grounded, "used_fields": g.used_fields})
+        # exactly what message 1 will be — WYSIWYG with {{col}}/%col% filled
+        text = scheduler.compose_message(None, lead, None, 0, step0_body, data)
+        out.append({"username": r["username"], "message": text})
     return jsonify(out)
 
 

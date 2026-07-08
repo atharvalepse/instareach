@@ -23,14 +23,13 @@
   .num{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;
        display:grid;place-items:center;font-size:12px}
   label{display:block;font-size:12px;font-weight:600;color:#475569;margin:0 0 5px}
+  label .hint{font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0}
   input,select,textarea{width:100%;padding:9px 11px;font-size:14px;color:var(--fg);
        border:1px solid var(--line2);border-radius:8px;background:#fff;font-family:inherit}
-  textarea{min-height:96px;font:13px/1.5 inherit;white-space:pre-wrap}
+  textarea{min-height:74px;font:13px/1.5 inherit;white-space:pre-wrap}
   textarea.mono{font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre;min-height:120px}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
        box-shadow:0 0 0 3px rgba(79,70,229,.15)}
-  .row{display:grid;grid-template-columns:1fr 160px;gap:12px}
-  .row2{display:grid;grid-template-columns:1fr 200px;gap:12px;margin-top:12px}
   .mt{margin-top:12px}
   .btn{margin-top:14px;padding:10px 16px;font-size:14px;font-weight:600;border:0;
        border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
@@ -40,12 +39,21 @@
   .pill{display:inline-flex;gap:6px;align-items:center;font-size:12px;font-weight:600;
         padding:4px 10px;border-radius:999px;background:var(--bg);color:#475569}
   .pill b{color:var(--fg)}
+  .vars{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.9}
+  .vars code{background:#eef2ff;color:#4338ca;padding:2px 7px;border-radius:5px;font-size:12px}
+  /* follow-up blocks */
+  .fu{border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-top:12px;background:#fcfcfd}
+  .fu-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .fu-title{font-weight:700;font-size:12px;color:#4338ca;display:flex;align-items:center;gap:6px}
+  .fu-when{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:#475569;
+           background:#f1f5f9;border-radius:8px;padding:8px 10px}
+  .fu-when input{width:72px} .fu-when select{width:auto;padding:6px 8px}
+  .fu-echo{font-size:12px;color:var(--accent);margin-top:8px;font-weight:600}
+  .rm{padding:3px 10px;font-size:11px;font-weight:600;border:1px solid #fecaca;color:#b91c1c;
+      border-radius:6px;background:#fff;cursor:pointer}
+  .rm:hover{background:#fef2f2}
   .opener{border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-top:10px;background:#fcfcfd}
-  .opener .top{display:flex;align-items:center;gap:8px;margin-bottom:5px}
-  .u{font-weight:700;font-size:13px} .txt{color:#1e293b}
-  .badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:999px}
-  .badge.g{background:#ecfdf5;color:#047857} .badge.x{background:#fef2f2;color:#b91c1c}
-  .fields{font-size:11px;color:var(--muted);margin-top:4px}
+  .u{font-weight:700;font-size:13px} .txt{color:#1e293b;margin-top:4px}
   .hidden{display:none} .muted{color:var(--muted)} .ok{color:var(--ok);font-weight:600}
   .disclaimer{font-size:11px;color:#94a3b8;margin-top:8px}
   table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
@@ -67,34 +75,33 @@
     <div class="logo">IG</div>
     <div><h1>IG Outreach Suite</h1></div>
   </header>
-  <p class="sub">Scrape → personalize → sequence. Local · $0 AI · dry-run only — nothing is sent to Instagram here.</p>
+  <p class="sub">Build a message + scheduled follow-ups → import leads → the extension sends from your Instagram session.</p>
 
   <!-- STEP 1 -->
   <div class="card">
-    <div class="step"><span class="num">1</span> Create campaign</div>
-    <div class="row">
-      <div><label>Campaign name</label><input id="name" value="Creators Q3" /></div>
-      <div><label>Voice</label>
-        <select id="tone"><option value="casual">Casual</option>
-          <option value="professional">Professional</option>
-          <option value="warm" selected>Warm</option></select></div>
+    <div class="step"><span class="num">1</span> Create campaign &amp; follow-up sequence</div>
+    <label>Campaign name</label>
+    <input id="name" value="Creators Q3" />
+
+    <label class="mt">Initial message <span class="hint">— the first DM to every lead</span></label>
+    <textarea id="initial">Hey {{first_name}}, loved your work at {{company}} — would love to collab!</textarea>
+
+    <div id="followups"></div>
+    <button class="btn sec" id="addFollowup" type="button" style="width:100%">+ Add follow-up</button>
+
+    <div class="vars">
+      Insert any uploaded CSV column with <code>{{column}}</code> (or <code>%column%</code>) — e.g.
+      <code>{{first_name}}</code> <code>{{company}}</code> <code>{{city}}</code>.
+      Unknown/empty ones are dropped cleanly. <span id="cols"></span>
     </div>
-    <div class="row2">
-      <div><label>Message sequence (one per line — line 1 = opener ask, rest = follow-up nudges)</label>
-        <textarea id="seq">Loved your work — would love you in our {{company}} collab program.
-Just circling back {{first_name}} — would love your thoughts!
-Last nudge — still keen to chat?</textarea>
-        <p class="disclaimer" id="cols">Use <b>{{column}}</b> to insert any uploaded CSV column — e.g. {{first_name}}, {{company}}, {{city}}. Unknown/empty ones are dropped cleanly (never sent as raw text).</p></div>
-      <div><label>Days between follow-ups</label><input id="gap" type="number" value="2" min="1" max="30" /></div>
-    </div>
-    <button class="btn" id="createBtn">Create campaign</button>
-    <span id="cid" class="pill hidden" style="margin-left:10px"></span>
+    <div><button class="btn" id="createBtn">Create campaign</button>
+      <span id="cid" class="pill hidden" style="margin-left:10px"></span></div>
   </div>
 
   <!-- STEP 2 -->
   <div class="card">
-    <div class="step"><span class="num">2</span> Import leads <span class="muted" style="text-transform:none;font-weight:500">(from the extension — JSON or CSV)</span></div>
-    <label>Enriched leads (JSON array — the igscrapper full-enrichment shape)</label>
+    <div class="step"><span class="num">2</span> Import leads <span class="muted" style="text-transform:none;font-weight:500">(JSON or CSV)</span></div>
+    <label>Enriched leads (JSON array)</label>
     <textarea id="leads" class="mono" spellcheck="false"></textarea>
     <div class="bar mt">
       <button class="btn sec" id="sampleBtn">Load sample JSON</button>
@@ -110,15 +117,14 @@ Last nudge — still keen to chat?</textarea>
 
   <!-- STEP 3 -->
   <div class="card">
-    <div class="step"><span class="num">3</span> Preview message 1 <span class="muted" style="text-transform:none;font-weight:500">(grounded in real scraped data)</span></div>
-    <button class="btn" id="previewBtn">Generate openers</button>
+    <div class="step"><span class="num">3</span> Preview message 1 <span class="muted" style="text-transform:none;font-weight:500">(variables filled from your leads)</span></div>
+    <button class="btn" id="previewBtn">Preview</button>
     <div id="openers"></div>
-    <p class="disclaimer">Each opener references only fields that were actually scraped — no model, nothing fabricated. "Generic" = too little data to personalize honestly.</p>
   </div>
 
   <!-- STEP 4 -->
   <div class="card">
-    <div class="step"><span class="num">4</span> Send loop &amp; follow-ups <span class="muted" style="text-transform:none;font-weight:500">(dry-run — nothing is sent to IG)</span></div>
+    <div class="step"><span class="num">4</span> Run &amp; follow-ups <span class="muted" style="text-transform:none;font-weight:500">(preview loop — the extension does the real sending)</span></div>
     <div class="bar">
       <button class="btn" id="startBtn">Start campaign</button>
       <button class="btn sec" id="tickBtn">Run tick</button>
@@ -128,7 +134,7 @@ Last nudge — still keen to chat?</textarea>
     </div>
     <span id="tickOut" class="muted mt" style="display:block"></span>
     <div id="contacts"></div>
-    <p class="disclaimer">Tick = one pass of the scheduler. Set advance hours past a follow-up gap (e.g. 48) to fire the next message. Mark a contact <b>replied</b> and tick again — they get no further messages (reply = permanent stop). State lives in the DB, so it survives restarts.</p>
+    <p class="disclaimer">Once <b>started</b>, the backend auto-queues each message on its schedule and the extension delivers it. "Run tick" here previews the schedule (advance the hours past a follow-up delay to see the next one fire). Mark a contact <b>replied</b> → they get no more follow-ups.</p>
   </div>
 </div>
 
@@ -139,15 +145,64 @@ const api = (m,u,b,raw) => fetch(u,{method:m,
     headers: raw ? {'Content-Type':'text/csv'} : {'Content-Type':'application/json'},
     body: b===undefined?undefined:(raw?b:JSON.stringify(b))}).then(r=>r.json());
 
+// ---- follow-up builder ----
+const UNIT = {"1":"hour","24":"day","168":"week"};
+function renumber(){
+  document.querySelectorAll("#followups .fu").forEach((fu,i)=>{
+    fu.querySelector(".fu-n").textContent = i+1;
+  });
+}
+function echo(fu){
+  const n = parseFloat(fu.querySelector(".fu-num").value)||1;
+  const u = fu.querySelector(".fu-unit").value;
+  const word = UNIT[u] + (n===1?"":"s");
+  fu.querySelector(".fu-echo").textContent = `→ Sends ${n} ${word} after the previous message`;
+}
+function addFollowup(body="Just circling back {{first_name}} — any thoughts?", num=3, unit="24"){
+  const div = document.createElement("div");
+  div.className = "fu";
+  div.innerHTML = `
+    <div class="fu-head">
+      <div class="fu-title">🔁 Follow-up #<span class="fu-n"></span></div>
+      <button class="rm" type="button">Remove</button>
+    </div>
+    <label>Message <span class="hint">— only sent if they haven't replied</span></label>
+    <textarea class="fu-body"></textarea>
+    <div class="fu-when">
+      <span>Send</span>
+      <input type="number" class="fu-num" min="1" max="90" value="${num}" />
+      <select class="fu-unit">
+        <option value="1">Hours</option>
+        <option value="24">Days</option>
+        <option value="168">Weeks</option>
+      </select>
+      <span>after the previous message</span>
+    </div>
+    <div class="fu-echo"></div>`;
+  div.querySelector(".fu-body").value = body;
+  div.querySelector(".fu-unit").value = unit;
+  div.querySelector(".rm").onclick = ()=>{ div.remove(); renumber(); };
+  div.querySelector(".fu-num").oninput = ()=>echo(div);
+  div.querySelector(".fu-unit").onchange = ()=>echo(div);
+  $("followups").appendChild(div);
+  renumber(); echo(div);
+}
+$("addFollowup").onclick = ()=>addFollowup();
+
 function buildSequence(){
-  const lines = $("seq").value.split("\n").map(s=>s.trim()).filter(Boolean);
-  const gap = parseFloat($("gap").value)||2;
-  return lines.map((body,i)=>({body, wait_hours: i===0?0:gap*24}));
+  const seq = [{body:$("initial").value.trim(), wait_hours:0}];
+  document.querySelectorAll("#followups .fu").forEach(fu=>{
+    const body = fu.querySelector(".fu-body").value.trim();
+    const num = parseFloat(fu.querySelector(".fu-num").value)||1;
+    const unit = parseFloat(fu.querySelector(".fu-unit").value)||24;
+    if(body) seq.push({body, wait_hours: num*unit});
+  });
+  return seq;
 }
 
 $("createBtn").onclick = async () => {
-  const r = await api("POST","/api/campaigns",
-    {name:$("name").value, tone:$("tone").value, sequence:buildSequence()});
+  if(!$("initial").value.trim()) return alert("Write an initial message first.");
+  const r = await api("POST","/api/campaigns",{name:$("name").value, sequence:buildSequence()});
   CID = r.campaign_id;
   const p = $("cid"); p.classList.remove("hidden"); p.innerHTML = "campaign: <b>"+CID+"</b>";
   $("openers").innerHTML=""; $("ingestOut").textContent=""; $("contacts").innerHTML=""; $("tickOut").textContent="";
@@ -156,36 +211,29 @@ $("createBtn").onclick = async () => {
 $("sampleBtn").onclick = async () => {
   $("leads").value = JSON.stringify(await api("GET","/api/sample-leads"), null, 2);
 };
-
 $("ingestBtn").onclick = async () => {
   if(!CID) return alert("Create a campaign first (step 1).");
   let leads; try{ leads = JSON.parse($("leads").value); }catch(e){ return alert("Leads must be valid JSON."); }
   showIngest(await api("POST",`/api/campaigns/${CID}/leads`, leads));
 };
-
 $("csvBtn").onclick = async () => {
   if(!CID) return alert("Create a campaign first (step 1).");
   const f = $("csvFile").files[0];
   if(!f) return alert("Choose a .csv file first.");
   const text = await f.text();
-  // surface the CSV's columns so the user knows which {{vars}} they can use
   const header = (text.split(/\r?\n/)[0]||"").split(",").map(h=>h.trim()).filter(Boolean);
-  if(header.length) $("cols").innerHTML = "Columns from your CSV you can use as variables: "+
-    header.map(h=>`<code>{{${h}}}</code>`).join(" ");
+  if(header.length) $("cols").innerHTML = "&nbsp;Your CSV columns: "+header.map(h=>`<code>{{${h}}}</code>`).join(" ");
   showIngest(await api("POST",`/api/campaigns/${CID}/leads/csv`, text, true));
 };
-
 $("csvSampleBtn").onclick = () => {
-  // includes custom columns (company, city) to show {{variable}} substitution
-  const csv = "instagram,full_name,company,city,is_business,category,top_hashtags,inferred_activity\n"+
-    "https://instagram.com/fitwithpriya,Priya Sharma,FitLab,Mumbai,yes,Fitness Trainer,#fitness #homeworkout,video-first (reels/short-form)\n"+
-    "@thelofibeats,Arjun Producer,LoFi Labs,Berlin,yes,Musician/Band,#lofi #beats,carousel-heavy (educational/portfolio)\n"+
-    "wanderlens,Maya,Wander Studio,Goa,no,,#travelphotography #35mm,photo/lifestyle\n";
+  const csv = "instagram,full_name,company,city\n"+
+    "https://instagram.com/fitwithpriya,Priya Sharma,FitLab,Mumbai\n"+
+    "@thelofibeats,Arjun Producer,LoFi Labs,Berlin\n"+
+    "wanderlens,Maya,Wander Studio,Goa\n";
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download = "sample_leads.csv"; a.click();
 };
-
 function showIngest(s){
   $("ingestOut").innerHTML = `<span class="ok">✓ imported ${s.inserted}</span> · `+
     `${s.duplicates} duplicate · ${s.suppressed} suppressed`+
@@ -197,25 +245,18 @@ $("previewBtn").onclick = async () => {
   const out = await api("POST",`/api/campaigns/${CID}/preview`,{n:50});
   if(!out.length){ $("openers").innerHTML='<p class="muted">No queued contacts — import leads in step 2.</p>'; return; }
   $("openers").innerHTML = out.map(o=>`
-    <div class="opener">
-      <div class="top"><span class="u">@${o.username}</span>
-        <span class="badge ${o.grounded?'g':'x'}">${o.grounded?'grounded':'generic'}</span></div>
-      <div class="txt">${esc(o.message)}</div>
-      <div class="fields">${o.used_fields.length?'from: '+o.used_fields.join(', '):'no personalization signals'}</div>
-    </div>`).join("");
+    <div class="opener"><span class="u">@${o.username}</span><div class="txt">${esc(o.message)}</div></div>`).join("");
 };
 
 $("startBtn").onclick = async () => {
   if(!CID) return alert("Create a campaign first.");
   await api("POST",`/api/campaigns/${CID}/start`);
-  $("tickOut").innerHTML = '<span class="ok">campaign is running</span>'; refreshContacts();
+  $("tickOut").innerHTML = '<span class="ok">campaign is running — the extension will now pull &amp; send</span>'; refreshContacts();
 };
-
 $("tickBtn").onclick = async () => {
   if(!CID) return alert("Create + start a campaign first.");
   const s = await api("POST",`/api/campaigns/${CID}/tick`, {advance_hours: parseFloat($("adv").value)||0});
-  $("tickOut").innerHTML = `tick → sent ${s.sent} · completed ${s.completed} · `+
-    `skipped ${s.skipped} · failed ${s.failed} · blocked ${s.blocked}`;
+  $("tickOut").innerHTML = `tick → sent ${s.sent} · completed ${s.completed} · skipped ${s.skipped} · failed ${s.failed} · blocked ${s.blocked}`;
   refreshContacts();
 };
 $("refreshBtn").onclick = () => refreshContacts();
@@ -236,11 +277,11 @@ async function refreshContacts(){
         <button class="mini" onclick="ev('${r.username}','replied')">mark replied</button>
       </td></tr>`).join("")+`</tbody></table>`;
 }
-
 window.ev = async (u,t) => { await api("POST",`/api/campaigns/${CID}/contacts/${u}/event`,{type:t}); refreshContacts(); };
 const esc = s => s.replace(/</g,'&lt;');
-const fmt = s => { try{ return new Date(s+'Z').toLocaleString(); }catch(e){ return s; } };
+const fmt = s => { try{ return new Date(s.replace(' ','T')+'Z').toLocaleString(); }catch(e){ return s; } };
 
+addFollowup();          // start with one follow-up
 $("sampleBtn").click();  // prefill leads box
 </script>
 </body>
